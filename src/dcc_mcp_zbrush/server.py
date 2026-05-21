@@ -1,142 +1,262 @@
-"""ZBrushMcpServer — MCP bridge server for ZBrush 2024+.
-
-Uses HTTP bridge mode:
-    MCP Client → ZBrushMcpServer (port 8765) → ZBrushBridge → ZBrush HTTP API (port 8080)
-"""
+"""ZBrushMcpServer — MCP server for ZBrush 2026.1+ embedded Python SDK."""
 
 from __future__ import annotations
 
 import logging
-import threading
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
+
+from dcc_mcp_core import DccServerOptions, MinimalModeConfig
+from dcc_mcp_core.server_base import DccServerBase
+
+from dcc_mcp_zbrush.__version__ import __version__
+from dcc_mcp_zbrush._skill_loader import build_minimal_mode_config
+from dcc_mcp_zbrush._version_probe import get_zbrush_version_string
 
 logger = logging.getLogger(__name__)
 
-_BUILTIN_SKILLS_DIR = Path(__file__).parent / "skills"
+SERVER_NAME = "dcc-mcp-zbrush"
+SERVER_VERSION = __version__
+DEFAULT_PORT = 8765
+_DCC_NAME = "zbrush"
+_BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
-_server_instance: Optional["ZBrushMcpServer"] = None
-_server_lock = threading.Lock()
+
+@dataclass
+class ZBrushServerOptions:
+    """Adapter-local options for the dcc-mcp-core server contract."""
+
+    port: int = DEFAULT_PORT
+    extra_skill_paths: Optional[List[str]] = None
+    server_name: str = SERVER_NAME
+    server_version: str = SERVER_VERSION
+    gateway_port: Optional[int] = None
+    registry_dir: Optional[str] = None
+    dcc_version: Optional[str] = None
+    enable_gateway_failover: Optional[bool] = None
+    mode: Optional[str] = None
+    socket_host: str = "127.0.0.1"
+    socket_port: int = 9876
+    dcc_pid: Optional[int] = None
+    dcc_window_title: Optional[str] = None
+
+    def to_core_options(self) -> DccServerOptions:
+        from dcc_mcp_zbrush import _env  # noqa: PLC0415
+
+        return DccServerOptions.from_env(
+            dcc_name=_DCC_NAME,
+            builtin_skills_dir=_BUILTIN_SKILLS_DIR,
+            port=self.port,
+            server_name=self.server_name,
+            server_version=self.server_version,
+            gateway_port=self.gateway_port,
+            registry_dir=self.registry_dir,
+            dcc_version=self.dcc_version,
+            enable_gateway_failover=_env.resolve_enable_gateway_failover(
+                self.enable_gateway_failover
+            ),
+            enable_file_logging=True,
+            enable_telemetry=True,
+            dcc_pid=self.dcc_pid,
+            dcc_window_title=self.dcc_window_title or "ZBrush",
+        )
 
 
-class ZBrushMcpServer:
-    """MCP bridge server for ZBrush 2024+.
-
-    Capabilities::
-
-        from dcc_mcp_core import DccCapabilities
-        caps = DccCapabilities.http_bridge("http://localhost:8080")
-        # has_embedded_python=False, bridge_kind="http"
-    """
+class ZBrushMcpServer(DccServerBase):
+    """MCP server embedded inside ZBrush or running as a sidecar bridge host."""
 
     def __init__(
         self,
-        port: int = 8765,
-        zbrush_host: str = "localhost",
-        zbrush_port: int = 8080,
-        api_key: Optional[str] = None,
+        port: int = DEFAULT_PORT,
         extra_skill_paths: Optional[List[str]] = None,
+        server_name: str = SERVER_NAME,
+        server_version: str = SERVER_VERSION,
+        gateway_port: Optional[int] = None,
+        registry_dir: Optional[str] = None,
+        dcc_version: Optional[str] = None,
+        enable_gateway_failover: Optional[bool] = None,
+        mode: Optional[str] = None,
+        socket_host: str = "127.0.0.1",
+        socket_port: int = 9876,
+        options: Optional[ZBrushServerOptions] = None,
     ) -> None:
-        self._port = port
-        self._zbrush_host = zbrush_host
-        self._zbrush_port = zbrush_port
-        self._api_key = api_key
-        self._extra_skill_paths = extra_skill_paths or []
-        self._server = None
-        self._handle = None
+        from dcc_mcp_zbrush import _env  # noqa: PLC0415
+
+        if options is None:
+            options = ZBrushServerOptions(
+                port=port,
+                extra_skill_paths=extra_skill_paths,
+                server_name=server_name,
+                server_version=server_version,
+                gateway_port=gateway_port,
+                registry_dir=registry_dir,
+                dcc_version=dcc_version,
+                enable_gateway_failover=enable_gateway_failover,
+                mode=mode,
+                socket_host=socket_host,
+                socket_port=socket_port,
+            )
+
+        super().__init__(options=options.to_core_options())
+
+        self._extra_skill_paths: List[str] = list(options.extra_skill_paths or [])
+        self._mode = _env.resolve_mode(options.mode)
+        self._socket_host = options.socket_host
+        self._socket_port = options.socket_port
         self._bridge = None
 
-    def _get_skill_paths(self) -> List[str]:
-        paths: List[str] = []
-        paths.extend(self._extra_skill_paths)
-        if _BUILTIN_SKILLS_DIR.exists():
-            paths.append(str(_BUILTIN_SKILLS_DIR))
-        return paths
+        if options.gateway_port == 0 or (
+            options.gateway_port is None
+            and not _env.resolve_enable_gateway_failover(options.enable_gateway_failover)
+        ):
+            self._config.gateway_port = 0
 
-    def _init_bridge(self) -> None:
-        """Initialize and connect the HTTP bridge."""
-        from dcc_mcp_zbrush import api  # noqa: PLC0415
-        from dcc_mcp_zbrush.bridge import ZBrushBridge  # noqa: PLC0415
+    def _version_string(self) -> str:
+        return get_zbrush_version_string()
 
-        self._bridge = ZBrushBridge(
-            host=self._zbrush_host,
-            port=self._zbrush_port,
-            api_key=self._api_key,
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    @property
+    def port(self) -> int:
+        if self._handle is not None:
+            try:
+                return int(self._handle.port)
+            except Exception:
+                pass
+        return int(self._options.port)
+
+    @property
+    def mcp_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/mcp"
+
+    def _collect_skill_paths(self) -> List[str]:
+        return self.collect_skill_search_paths(
+            extra_paths=self._extra_skill_paths,
+            filter_existing=True,
         )
+
+    def _init_sidecar_bridge(self) -> None:
+        if self._mode != "sidecar":
+            return
+
+        from dcc_mcp_zbrush import api  # noqa: PLC0415
+        from dcc_mcp_zbrush.bridge import SocketBridge  # noqa: PLC0415
+
+        self._bridge = SocketBridge(host=self._socket_host, port=self._socket_port)
         try:
             self._bridge.connect()
-            api._bridge = self._bridge
+            api.set_bridge(self._bridge)
             logger.info(
-                "ZBrushBridge connected to http://%s:%d",
-                self._zbrush_host,
-                self._zbrush_port,
+                "SocketBridge connected to ZBrush plugin at %s:%d",
+                self._socket_host,
+                self._socket_port,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "ZBrushBridge could not connect: %s — "
-                "skill calls will fail until ZBrush HTTP Server is running",
+                "SocketBridge could not connect (%s). "
+                "Install bridge/plugin/mcp_socket_bridge.py in ZBrush and restart.",
                 exc,
             )
 
-    def register_builtin_actions(self) -> None:
-        """Discover and load all built-in ZBrush skills."""
-        from dcc_mcp_core import McpHttpConfig, create_skill_manager  # noqa: PLC0415
+    def register_builtin_actions(
+        self,
+        extra_skill_paths: list[str] | None = None,
+        include_bundled: bool = True,
+        minimal_mode: MinimalModeConfig | None = None,
+    ) -> None:
+        from dcc_mcp_zbrush import _env, _executor  # noqa: PLC0415
 
-        config = McpHttpConfig(port=self._port)
-        extra_paths = self._get_skill_paths()
-        self._server = create_skill_manager(
-            "zbrush",
-            config=config,
-            extra_paths=extra_paths or None,
-            dcc_name="zbrush",
+        if minimal_mode is None and _env.resolve_minimal_mode_enabled():
+            minimal_mode = build_minimal_mode_config()
+
+        if self._mode == "embedded":
+            _executor.attach_inprocess_executor(self)
+
+        super().register_builtin_actions(
+            extra_skill_paths=extra_skill_paths,
+            include_bundled=include_bundled,
+            minimal_mode=minimal_mode,
         )
-        logger.info("ZBrushMcpServer: registered skills from %d path(s)", len(extra_paths))
 
-    def start(self) -> Any:
-        """Start the MCP HTTP server and connect the bridge."""
-        self._init_bridge()
-        if self._server is None:
-            self.register_builtin_actions()
-        self._handle = self._server.start()
-        logger.info("ZBrushMcpServer started at %s", self._handle.mcp_url())
-        return self._handle
+    def start(self, *, install_atexit_hook: bool = True) -> "ZBrushMcpServer":
+        self._init_sidecar_bridge()
+        super().start(install_atexit_hook=install_atexit_hook)
+        logger.info(
+            "ZBrushMcpServer started (%s mode) at %s",
+            self._mode,
+            self.mcp_url,
+        )
+        return self
 
     def stop(self) -> None:
-        """Stop the MCP HTTP server and disconnect the bridge."""
-        if self._handle is not None:
-            self._handle.shutdown()
-            self._handle = None
         if self._bridge is not None:
             self._bridge.disconnect()
             self._bridge = None
-        logger.info("ZBrushMcpServer stopped")
+        super().stop()
+
+    def discover_skills(self, extra_paths: Optional[List[str]] = None) -> int:
+        if self._handle is None:
+            logger.warning("discover_skills called before server was started")
+            return 0
+        paths = self._collect_skill_paths()
+        if extra_paths:
+            paths = list(extra_paths) + paths
+        return int(self._server.discover(extra_paths=paths, dcc_name=_DCC_NAME))
+
+    def load_skill(self, skill_name: str) -> List[str]:
+        if self._handle is None:
+            raise RuntimeError("Server is not running — call start() first")
+        return list(self._server.load_skill(skill_name))
+
+    def list_skills(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        if self._handle is None:
+            return []
+        return list(self._server.list_skills(status=status))
+
+
+_server_instance: Optional[ZBrushMcpServer] = None
+
+
+def get_server() -> Optional[ZBrushMcpServer]:
+    return _server_instance
 
 
 def start_server(
-    port: int = 8765,
-    zbrush_host: str = "localhost",
-    zbrush_port: int = 8080,
-    api_key: Optional[str] = None,
+    port: int = DEFAULT_PORT,
     extra_skill_paths: Optional[List[str]] = None,
-) -> Any:
-    """Start the module-level singleton MCP server for ZBrush."""
+    gateway_port: Optional[int] = None,
+    registry_dir: Optional[str] = None,
+    mode: Optional[str] = None,
+    socket_host: str = "127.0.0.1",
+    socket_port: int = 9876,
+    **kwargs: Any,
+) -> ZBrushMcpServer:
+    """Start the ZBrush MCP server singleton."""
     global _server_instance  # noqa: PLW0603
-    with _server_lock:
-        if _server_instance is None:
-            _server_instance = ZBrushMcpServer(
-                port=port,
-                zbrush_host=zbrush_host,
-                zbrush_port=zbrush_port,
-                api_key=api_key,
-                extra_skill_paths=extra_skill_paths,
-            )
-        return _server_instance.start()
+
+    if _server_instance is None:
+        _server_instance = ZBrushMcpServer(
+            port=port,
+            extra_skill_paths=extra_skill_paths,
+            gateway_port=gateway_port,
+            registry_dir=registry_dir,
+            mode=mode,
+            socket_host=socket_host,
+            socket_port=socket_port,
+            **kwargs,
+        )
+        _server_instance.register_builtin_actions()
+        _server_instance.start()
+    return _server_instance
 
 
 def stop_server() -> None:
-    """Stop the module-level singleton MCP server."""
+    """Stop the ZBrush MCP server singleton."""
     global _server_instance  # noqa: PLW0603
-    with _server_lock:
-        if _server_instance is not None:
-            _server_instance.stop()
-            _server_instance = None
+
+    if _server_instance is not None:
+        _server_instance.stop()
+        _server_instance = None

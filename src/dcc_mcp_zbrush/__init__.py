@@ -1,63 +1,93 @@
-"""dcc-mcp-zbrush — ZBrush adapter for the DCC MCP ecosystem.
-
-Architecture: HTTP Bridge Mode
---------------------------------
-ZBrush 2024+ exposes a built-in HTTP REST server on a configurable port.
-This package acts as the bridge between dcc-mcp-core's MCP HTTP server and
-ZBrush's HTTP API:
-
-    MCP Client (Claude/Cursor)
-         ↓ HTTP (MCP Streamable HTTP, port 8765)
-    ZBrushMcpServer (this package)
-         ↓ HTTP REST (ZBrush API, port 8080)
-    ZBrush 2024+ (built-in HTTP server)
-         ↓ ZScript execution
-    ZBrush sculpting engine
-
-The DccCapabilities for ZBrush marks:
-    has_embedded_python = False
-    bridge_kind = "http"
-    bridge_endpoint = "http://localhost:8080"
-
-Quickstart::
-
-    import dcc_mcp_zbrush
-    handle = dcc_mcp_zbrush.start_server(port=8765, zbrush_port=8080)
-    # MCP host connects to http://127.0.0.1:8765/mcp
-    handle.shutdown()
-
-Requirements:
-    - ZBrush 2024.0.1+
-    - ZBrush HTTP Server enabled (Preferences > Network > Enable HTTP Server)
-    - dcc-mcp-core >= 0.12.14
-    - httpx >= 0.25.0
-"""
-
-from __future__ import annotations
+"""Maxon ZBrush adapter for DCC MCP Core."""
 
 from dcc_mcp_zbrush.__version__ import __version__
+from dcc_mcp_zbrush._env import (
+    ENV_AUTOSTART,
+    ENV_ENABLE_GATEWAY_FAILOVER,
+    ENV_GATEWAY_PORT,
+    ENV_MODE,
+    ENV_PORT,
+    ENV_SOCKET_HOST,
+    ENV_SOCKET_PORT,
+    resolve_enable_gateway_failover,
+    resolve_minimal_mode_enabled,
+    resolve_mode,
+)
+from dcc_mcp_zbrush._skill_loader import (
+    MINIMAL_SKILLS,
+    STAGES,
+    STAGE_SKILLS,
+    build_minimal_mode_config,
+    build_minimal_mode_for_stages,
+    skills_for_stage,
+)
+from dcc_mcp_zbrush._version_probe import (
+    get_active_tool_path,
+    get_zbrush_version_string,
+    get_zbrush_version_tuple,
+    is_zbrush_available,
+)
 from dcc_mcp_zbrush.api import (
     ZBrushNotAvailableError,
-    is_zbrush_available,
+    get_bridge,
+    import_zbc,
+    is_zbrush_available as is_zb_available,
+    set_bridge,
+    with_zbrush,
     zb_error,
     zb_from_exception,
     zb_success,
 )
-from dcc_mcp_zbrush.bridge import ZBrushBridge
-from dcc_mcp_zbrush.server import ZBrushMcpServer, start_server, stop_server
+from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridge, ZBrushBridgeError
+from dcc_mcp_zbrush.server import (
+    DEFAULT_PORT,
+    SERVER_NAME,
+    ZBrushMcpServer,
+    ZBrushServerOptions,
+    get_server,
+    start_server,
+    stop_server,
+)
 
 __all__ = [
     "__version__",
-    # Server
+    "DEFAULT_PORT",
+    "ENV_AUTOSTART",
+    "ENV_ENABLE_GATEWAY_FAILOVER",
+    "ENV_GATEWAY_PORT",
+    "ENV_MODE",
+    "ENV_PORT",
+    "ENV_SOCKET_HOST",
+    "ENV_SOCKET_PORT",
+    "MINIMAL_SKILLS",
+    "SERVER_NAME",
+    "STAGES",
+    "STAGE_SKILLS",
+    "SocketBridge",
+    "ZBrushBridge",
+    "ZBrushBridgeError",
     "ZBrushMcpServer",
+    "ZBrushNotAvailableError",
+    "ZBrushServerOptions",
+    "build_minimal_mode_config",
+    "build_minimal_mode_for_stages",
+    "get_active_tool_path",
+    "get_bridge",
+    "get_server",
+    "get_zbrush_version_string",
+    "get_zbrush_version_tuple",
+    "import_zbc",
+    "is_zbrush_available",
+    "is_zb_available",
+    "resolve_enable_gateway_failover",
+    "resolve_minimal_mode_enabled",
+    "resolve_mode",
+    "set_bridge",
+    "skills_for_stage",
     "start_server",
     "stop_server",
-    # Bridge
-    "ZBrushBridge",
-    # Skill authoring helpers
-    "zb_success",
+    "with_zbrush",
     "zb_error",
     "zb_from_exception",
-    "is_zbrush_available",
-    "ZBrushNotAvailableError",
+    "zb_success",
 ]

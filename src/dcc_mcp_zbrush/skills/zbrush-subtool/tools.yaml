@@ -1,0 +1,50 @@
+tools:
+  - name: select_subtool
+    description: >-
+      Activate the subtool at the given zero-based index on the current tool.
+      Mutates the active subtool selection in ZBrush.
+    source_file: scripts/select_subtool.py
+    execution: sync
+    affinity: main
+    group: core
+    annotations:
+      destructive_hint: true
+      read_only_hint: false
+      idempotent_hint: true
+    inputSchema:
+      type: object
+      required: [index]
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          description: Zero-based subtool index on the active tool.
+    next-tools:
+      on-success:
+        - tool: zbrush_subtool__get_subtool_status
+          reason: Verify visibility/lock flags after switching.
+      on-failure:
+        - tool: zbrush_scene__list_subtools
+          reason: Re-list valid subtool indices before retrying.
+  - name: get_subtool_status
+    description: >-
+      Read decoded visibility and lock flags for a subtool index, or the active
+      subtool when index is omitted.
+    source_file: scripts/get_subtool_status.py
+    execution: sync
+    affinity: main
+    group: diagnostics
+    annotations:
+      read_only_hint: true
+      idempotent_hint: true
+    inputSchema:
+      type: object
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          description: Subtool index. Omit to query the active subtool.
+    next-tools:
+      on-success:
+        - tool: zbrush_interchange__export_active_subtool_obj
+          reason: Export the active visible subtool when interchange is next.
