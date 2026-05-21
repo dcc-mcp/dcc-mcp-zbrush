@@ -41,7 +41,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install ruff
         run: pip install ruff
@@ -61,7 +61,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install PyYAML
         run: pip install pyyaml
@@ -78,7 +78,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
@@ -95,7 +95,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Pack ZBrush plugin
         run: python tools/pack_plugin.py --output dist/plugin
