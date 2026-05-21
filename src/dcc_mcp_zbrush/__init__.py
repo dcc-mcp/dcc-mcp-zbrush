@@ -15,8 +15,8 @@ from dcc_mcp_zbrush._env import (
 )
 from dcc_mcp_zbrush._skill_loader import (
     MINIMAL_SKILLS,
-    STAGES,
     STAGE_SKILLS,
+    STAGES,
     build_minimal_mode_config,
     build_minimal_mode_for_stages,
     skills_for_stage,
@@ -31,12 +31,14 @@ from dcc_mcp_zbrush.api import (
     ZBrushNotAvailableError,
     get_bridge,
     import_zbc,
-    is_zbrush_available as is_zb_available,
     set_bridge,
     with_zbrush,
     zb_error,
     zb_from_exception,
     zb_success,
+)
+from dcc_mcp_zbrush.api import (
+    is_zbrush_available as is_zb_available,
 )
 from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridge, ZBrushBridgeError
 from dcc_mcp_zbrush.server import (

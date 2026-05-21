@@ -53,9 +53,7 @@ class ZBrushServerOptions:
             gateway_port=self.gateway_port,
             registry_dir=self.registry_dir,
             dcc_version=self.dcc_version,
-            enable_gateway_failover=_env.resolve_enable_gateway_failover(
-                self.enable_gateway_failover
-            ),
+            enable_gateway_failover=_env.resolve_enable_gateway_failover(self.enable_gateway_failover),
             enable_file_logging=True,
             enable_telemetry=True,
             dcc_pid=self.dcc_pid,
@@ -107,8 +105,7 @@ class ZBrushMcpServer(DccServerBase):
         self._bridge = None
 
         if options.gateway_port == 0 or (
-            options.gateway_port is None
-            and not _env.resolve_enable_gateway_failover(options.enable_gateway_failover)
+            options.gateway_port is None and not _env.resolve_enable_gateway_failover(options.enable_gateway_failover)
         ):
             self._config.gateway_port = 0
 
