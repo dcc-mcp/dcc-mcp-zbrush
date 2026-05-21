@@ -50,9 +50,7 @@ class SocketBridge:
             self._connected = True
             logger.info("SocketBridge connected to %s", self.endpoint)
         except Exception as exc:
-            raise ZBrushNotAvailableError(
-                f"Cannot connect to ZBrush socket plugin at {self.endpoint}: {exc}"
-            ) from exc
+            raise ZBrushNotAvailableError(f"Cannot connect to ZBrush socket plugin at {self.endpoint}: {exc}") from exc
 
     def disconnect(self) -> None:
         self._connected = False

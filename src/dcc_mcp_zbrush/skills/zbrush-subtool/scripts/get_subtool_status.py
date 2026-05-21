@@ -6,8 +6,8 @@ from typing import Optional
 
 from dcc_mcp_core.skill import skill_entry
 
-from dcc_mcp_zbrush.api import with_zbrush, zb_success
 from dcc_mcp_zbrush._skill_host import subtool_status_flags
+from dcc_mcp_zbrush.api import with_zbrush, zb_success
 
 
 def _status(zbc, index: Optional[int]) -> dict:

@@ -19,8 +19,6 @@ def test_api_imports():
         SocketBridge,
         ZBrushMcpServer,
         is_zbrush_available,
-        start_server,
-        stop_server,
         zb_error,
         zb_success,
     )
