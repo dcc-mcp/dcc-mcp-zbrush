@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dcc-mcp-zbrush"
-version = "0.1.0"
-description = "ZBrush adapter for the DCC Model Context Protocol (MCP) ecosystem — bridges MCP tools to ZBrush via HTTP REST API"
+version = "0.2.0"
+description = "ZBrush adapter for the DCC Model Context Protocol (MCP) ecosystem — embedded Python SDK + optional socket bridge"
 authors = [{ name = "Long Hao", email = "hal.long@outlook.com" }]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.8"
-keywords = ["zbrush", "pixologic", "mcp", "dcc", "ai", "llm", "model-context-protocol", "3d-sculpting"]
+requires-python = ">=3.9"
+keywords = ["zbrush", "maxon", "mcp", "dcc", "ai", "llm", "model-context-protocol", "3d-sculpting"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
@@ -20,22 +20,25 @@ classifiers = [
 ]
 
 dependencies = [
-    "dcc-mcp-core>=0.12.14,<1.0.0",
-    "httpx>=0.25.0",
+    "dcc-mcp-core>=0.17.2,<1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-mock>=3.0",
-    "respx>=0.20",
     "ruff>=0.8.0",
     "hatchling",
+    "build>=1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/loonghao/dcc-mcp-zbrush"
 Repository = "https://github.com/loonghao/dcc-mcp-zbrush"
+
+[project.scripts]
+dcc-mcp-zbrush = "dcc_mcp_zbrush.cli:main"
 
 [project.entry-points."dcc_mcp.adapters"]
 zbrush = "dcc_mcp_zbrush:ZBrushMcpServer"
@@ -50,7 +53,7 @@ addopts = "-v --tb=short"
 
 [tool.ruff]
 line-length = 120
-target-version = "py38"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

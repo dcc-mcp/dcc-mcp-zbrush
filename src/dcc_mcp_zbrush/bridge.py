@@ -1,174 +1,116 @@
-"""ZBrushBridge — HTTP client for the ZBrush 2024+ built-in HTTP server.
+"""SocketBridge — TCP JSON bridge to a ZBrush in-process plugin.
 
-ZBrush HTTP API
----------------
-ZBrush 2024+ exposes a REST API on a configurable port (default 8080).
-
-Key endpoints:
-  POST /api/zscript   — Execute ZScript code
-  GET  /api/info      — Get ZBrush version and status
-  GET  /api/tools     — List available ZTools
-  POST /api/export    — Export mesh to file
-
-Authentication:
-  Optional API key via X-ZBrush-API-Key header (configurable in ZBrush prefs).
-
-Request/Response format:
-  Content-Type: application/json
-  {
-    "code": "ZScript code here",
-    "timeout": 30000
-  }
-
-Response:
-  {
-    "success": true,
-    "output": "...",
-    "error": null
-  }
+Use sidecar mode when the MCP server runs outside ZBrush and forwards tool
+calls to ``bridge/plugin/mcp_socket_bridge.py`` running inside ZBrush.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import socket
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 8080
-DEFAULT_TIMEOUT_SEC = 30.0
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 9876
+DEFAULT_TIMEOUT_SEC = 120.0
 
 
 class ZBrushBridgeError(RuntimeError):
-    """Raised when a ZBrush API call fails."""
+    """Raised when a bridge RPC call fails."""
 
 
 class ZBrushNotAvailableError(ConnectionError):
-    """Raised when ZBrush HTTP server is not reachable."""
+    """Raised when the ZBrush socket plugin is not reachable."""
 
 
-class ZBrushBridge:
-    """HTTP bridge to ZBrush 2024+ built-in HTTP server.
-
-    Usage::
-
-        bridge = ZBrushBridge(host="localhost", port=8080)
-        info = bridge.get_info()
-        result = bridge.execute_zscript("[IButton,/Zplugin/Button1,Run,]")
-
-    Or with context manager::
-
-        with ZBrushBridge() as bridge:
-            result = bridge.execute_zscript("ISet, 0, ToolLayers:LayerBake")
-    """
+class SocketBridge:
+    """Minimal TCP JSON-RPC client for the ZBrush MCP socket plugin."""
 
     def __init__(
         self,
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
         timeout: float = DEFAULT_TIMEOUT_SEC,
-        api_key: Optional[str] = None,
     ) -> None:
         self._host = host
         self._port = port
         self._timeout = timeout
-        self._api_key = api_key
-        self._client = None
+        self._connected = False
 
     @property
-    def base_url(self) -> str:
-        """Base URL for the ZBrush HTTP API."""
-        return f"http://{self._host}:{self._port}"
+    def endpoint(self) -> str:
+        return f"{self._host}:{self._port}"
 
     def connect(self) -> None:
-        """Initialize the HTTP client.
-
-        Raises:
-            ZBrushNotAvailableError: If ZBrush HTTP server is not reachable.
-        """
         try:
-            import httpx  # noqa: PLC0415
-            headers = {}
-            if self._api_key:
-                headers["X-ZBrush-API-Key"] = self._api_key
-            self._client = httpx.Client(
-                base_url=self.base_url,
-                headers=headers,
-                timeout=self._timeout,
-            )
-            # Verify ZBrush is running
-            self._client.get("/api/info").raise_for_status()
-            logger.info("ZBrushBridge connected to %s", self.base_url)
-        except ImportError as exc:
-            raise ZBrushNotAvailableError("httpx is required: pip install httpx") from exc
+            self.call("ping")
+            self._connected = True
+            logger.info("SocketBridge connected to %s", self.endpoint)
         except Exception as exc:
             raise ZBrushNotAvailableError(
-                f"Cannot connect to ZBrush HTTP server at {self.base_url}: {exc}\n"
-                "Ensure ZBrush 2024+ is running with HTTP Server enabled "
-                "(Preferences > Network > Enable HTTP Server)."
+                f"Cannot connect to ZBrush socket plugin at {self.endpoint}: {exc}"
             ) from exc
 
     def disconnect(self) -> None:
-        """Close the HTTP client."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-        logger.info("ZBrushBridge disconnected")
+        self._connected = False
 
     def is_connected(self) -> bool:
-        """Return True if the HTTP client is initialized."""
-        return self._client is not None
+        return self._connected
 
-    def get_info(self) -> Dict[str, Any]:
-        """Get ZBrush version and status information.
+    def call(self, method: str, **params: Any) -> Any:
+        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        raw = self._send(json.dumps(payload).encode("utf-8"))
+        try:
+            message = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ZBrushBridgeError(f"Invalid JSON from ZBrush plugin: {raw!r}") from exc
 
-        Returns:
-            dict with version, status, and capabilities.
-        """
-        if self._client is None:
-            raise ZBrushNotAvailableError("Not connected. Call connect() first.")
-        # TODO: implement actual HTTP call
-        raise NotImplementedError("ZBrushBridge.get_info() — HTTP implementation pending")
+        if "error" in message:
+            err = message["error"]
+            raise ZBrushBridgeError(str(err.get("message", err)))
+        return message.get("result")
 
-    def execute_zscript(self, code: str, timeout_ms: int = 30000) -> Dict[str, Any]:
-        """Execute ZScript code in ZBrush.
+    def execute_python(self, code: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        result = self.call("execute_python", code=code, context=context or {})
+        if not isinstance(result, dict):
+            raise ZBrushBridgeError(f"Unexpected execute_python result: {result!r}")
+        return result
 
-        Args:
-            code: ZScript code to execute.
-            timeout_ms: Execution timeout in milliseconds.
+    def get_session_info(self) -> Dict[str, Any]:
+        result = self.call("get_session_info")
+        if not isinstance(result, dict):
+            raise ZBrushBridgeError(f"Unexpected get_session_info result: {result!r}")
+        return result
 
-        Returns:
-            dict: {"success": bool, "output": str | None, "error": str | None}
-        """
-        if self._client is None:
-            raise ZBrushNotAvailableError("Not connected. Call connect() first.")
-        # TODO: implement actual HTTP call
-        raise NotImplementedError(
-            "ZBrushBridge.execute_zscript() — HTTP implementation pending. "
-            f"Would POST to {self.base_url}/api/zscript with code: {code[:50]}..."
-        )
+    def get_scene_info(self) -> Dict[str, Any]:
+        result = self.call("get_scene_info")
+        if not isinstance(result, dict):
+            raise ZBrushBridgeError(f"Unexpected get_scene_info result: {result!r}")
+        return result
 
-    def list_tools(self) -> list:
-        """List available ZTools in ZBrush."""
-        if self._client is None:
-            raise ZBrushNotAvailableError("Not connected. Call connect() first.")
-        raise NotImplementedError("ZBrushBridge.list_tools() — HTTP implementation pending")
+    def _send(self, data: bytes) -> bytes:
+        with socket.create_connection((self._host, self._port), timeout=self._timeout) as sock:
+            sock.sendall(data + b"\n")
+            chunks: list[bytes] = []
+            while True:
+                part = sock.recv(65536)
+                if not part:
+                    break
+                chunks.append(part)
+                if b"\n" in part:
+                    break
+        return b"".join(chunks).split(b"\n", 1)[0]
 
-    def export_mesh(self, path: str, format: str = "obj") -> Dict[str, Any]:  # noqa: A002
-        """Export the active ZTool mesh to a file.
-
-        Args:
-            path: Output file path.
-            format: Export format ("obj", "fbx", "ztl", "stl").
-        """
-        if self._client is None:
-            raise ZBrushNotAvailableError("Not connected. Call connect() first.")
-        raise NotImplementedError("ZBrushBridge.export_mesh() — HTTP implementation pending")
-
-    def __enter__(self) -> "ZBrushBridge":
+    def __enter__(self) -> "SocketBridge":
         self.connect()
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.disconnect()
+
+
+# Backward-compatible alias from the pre-alpha HTTP scaffold.
+ZBrushBridge = SocketBridge
