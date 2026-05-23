@@ -134,7 +134,7 @@ jobs:
             dist/*.tar.gz
 
       - name: Upload Python assets to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: |
@@ -168,7 +168,7 @@ jobs:
           path: dist/plugin/*.zip
 
       - name: Upload plugin to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: dist/plugin/*.zip
