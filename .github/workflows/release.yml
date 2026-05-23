@@ -126,7 +126,7 @@ jobs:
         run: python -m build
 
       - name: Upload Python dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: |
@@ -162,7 +162,7 @@ jobs:
         run: python tools/pack_plugin.py --version "$RELEASE_VERSION" --output dist/plugin
 
       - name: Upload plugin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zbrush-plugin
           path: dist/plugin/*.zip
@@ -189,7 +189,7 @@ jobs:
       contents: write
     steps:
       - name: Download Python dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist/
