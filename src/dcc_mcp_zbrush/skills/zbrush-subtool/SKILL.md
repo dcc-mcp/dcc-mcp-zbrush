@@ -5,7 +5,7 @@ description: >-
   you need to switch the active subtool or read visibility/lock flags. Not for
   mesh export or arbitrary Python — use zbrush-interchange or zbrush-scripting.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.17+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.18+"
 allowed-tools: Bash Read
 metadata:
   dcc-mcp:
