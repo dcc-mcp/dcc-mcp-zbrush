@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib.metadata import version
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +12,7 @@ import pytest
 def test_import():
     import dcc_mcp_zbrush
 
-    assert dcc_mcp_zbrush.__version__ == "0.2.0"
+    assert dcc_mcp_zbrush.__version__ == version("dcc-mcp-zbrush")
 
 
 def test_api_imports():

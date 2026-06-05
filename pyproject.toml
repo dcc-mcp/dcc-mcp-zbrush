@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dcc-mcp-zbrush"
-version = "0.2.1"
+version = "0.2.2"
 description = "ZBrush adapter for the DCC Model Context Protocol (MCP) ecosystem — embedded Python SDK + optional socket bridge"
 authors = [{ name = "Long Hao", email = "hal.long@outlook.com" }]
 readme = "README.md"
