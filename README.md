@@ -47,7 +47,7 @@ AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
 
 - ZBrush **2026.1+**
 - Python **3.9+** on the sidecar host (ZBrush itself ships 3.11)
-- `dcc-mcp-core >= 0.17.2`
+- `dcc-mcp-core >= 0.18.2`
 
 ## Installation
 
