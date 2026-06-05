@@ -6,7 +6,7 @@ description: >-
   version/subtool counts. Not for routine scene edits — prefer zbrush-scene or
   domain skills first.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.17+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.18+"
 allowed-tools: Bash Read Write Edit
 metadata:
   dcc-mcp:

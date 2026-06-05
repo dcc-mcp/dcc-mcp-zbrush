@@ -5,7 +5,7 @@ description: >-
   need active tool path, subtool inventory, or selection index. Not for sculpting,
   export, or subtool mutation — use zbrush-subtool or zbrush-interchange.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.17+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.18+"
 allowed-tools: Bash Read
 metadata:
   dcc-mcp:
