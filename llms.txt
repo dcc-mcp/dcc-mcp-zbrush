@@ -9,18 +9,38 @@
 | **Embedded (recommended)** | ZBrush 2026.1+ with Python SDK | Python plugin inside ZBrush → `dcc-mcp-core` MCP HTTP server → `zbrush.commands` |
 | **Sidecar + socket plugin** | External MCP process / restricted installs | External Python → TCP :9876 → `bridge/plugin/mcp_socket_bridge.py` inside ZBrush |
 
-## Required artifacts
+## Distribution artifacts
 
-| Artifact | Source |
-|----------|--------|
-| `dcc-mcp-zbrush` wheel | PyPI: `pip install dcc-mcp-zbrush` |
-| Socket bridge plugin | `bridge/plugin/mcp_socket_bridge.py` (bundled in wheel) |
+There are three independent distribution channels. Each covers a different scope:
+
+| Artifact | Scope | Install command |
+|----------|-------|-----------------|
+| **PyPI wheel** (`dcc-mcp-zbrush`) | Python package (`src/dcc_mcp_zbrush/`) only — MCP server, skills, bridge client | `pip install dcc-mcp-zbrush` |
+| **Plugin ZIP** (GitHub Release) | ZBrush plugin files — auto-start package, socket bridge, install scripts | Download from [latest release](https://github.com/loonghao/dcc-mcp-zbrush/releases/latest) and run `install-windows.ps1` or `install-macos.sh` |
+| **Repo source** (`git clone`) | Everything above + `bridge/plugin/` raw sources + tests + tools | `git clone https://github.com/loonghao/dcc-mcp-zbrush.git` |
+
+The wheel **does not** bundle `bridge/plugin/` — that directory is only in the plugin ZIP or the repo checkout.
 
 ## Install steps (embedded)
 
+### New install (PyPI + plugin ZIP)
+
 ```bash
-# 1. Install package into ZBrush's Python path
-pip install dcc-mcp-zbrush -t /path/to/zbrush/python/libs
+# 1. Install Python package
+pip install dcc-mcp-zbrush
+
+# 2. Download plugin ZIP from GitHub Releases and run installer
+#    https://github.com/loonghao/dcc-mcp-zbrush/releases/latest
+#    The installer copies plugin files into ZStartup/ZPlugs64
+
+# 3. Restart ZBrush
+```
+
+### From source checkout
+
+```bash
+# 1. Editable install
+pip install -e ".[dev]"
 
 # 2. Copy auto-start plugin
 # Windows
