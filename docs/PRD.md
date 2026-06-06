@@ -252,11 +252,23 @@ TCP JSON-RPC 2.0, newline-delimited frames. Each request is a JSON object follow
 | `execute_python` | `code`, `context` | Execute arbitrary Python in ZBrush VM |
 | `export_active_subtool_obj` | `output_path` | Export active SubTool as OBJ |
 
-### 6.3 Plugin Installation
+### 6.3 Distribution Sources
 
-Copy `bridge/plugin/mcp_socket_bridge.py` into `ZStartup/ZPlugs64` or expose via `ZBRUSH_PLUGIN_PATH`. The plugin auto-starts the TCP listener when ZBrush launches. No ZBrush restart is needed after plugin drop-in (ZBrush's plugin watcher loads it).
+The project ships through three independent channels. Know the boundary of each:
 
-### 6.4 Auto-Start Plugin (Embedded Mode)
+| Channel | Contains | Does NOT contain |
+|---------|----------|------------------|
+| **PyPI wheel** (`pip install dcc-mcp-zbrush`) | Python MCP server, skills, CLI entry point, `SocketBridge` client | ZBrush plugin files (`bridge/plugin/`) |
+| **Plugin ZIP** (GitHub Release asset) | Auto-start plugin package, `mcp_socket_bridge.py`, install scripts | Python package (`src/dcc_mcp_zbrush/`) |
+| **Repo source** (`git clone`) | Everything above + tests + tools + `bridge/plugin/` raw sources | — |
+
+The wheel (`pyproject.toml:46-47`) only packages `src/dcc_mcp_zbrush`. The `bridge/plugin/` directory is **not** in the wheel — it is distributed via the plugin ZIP or available in the repo checkout.
+
+### 6.4 Plugin Installation
+
+Copy `bridge/plugin/mcp_socket_bridge.py` into `ZStartup/ZPlugs64` or expose via `ZBRUSH_PLUGIN_PATH`, then **restart ZBrush**. The plugin auto-starts the TCP listener on next ZBrush launch.
+
+### 6.5 Auto-Start Plugin (Embedded Mode)
 
 The `bridge/plugin/dcc_mcp_zbrush/__init__.py` package auto-starts `dcc_mcp_zbrush.start_server(mode="embedded")` when ZBrush loads the plugin directory. Controlled by `DCC_MCP_ZBRUSH_AUTOSTART` (default: on).
 
