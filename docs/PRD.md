@@ -357,7 +357,7 @@ Minimal mode (`DCC_MCP_MINIMAL=1`) loads only bootstrap + scene at startup. Addi
 | Startup time | < 2s (embedded) or < 1s (sidecar) |
 | Python version | 3.9+ |
 | ZBrush version | 2026.1+ |
-| Dependencies | `dcc-mcp-core>=0.18.2,<1.0.0` |
+| Dependencies | `dcc-mcp-core>=0.18.7,<1.0.0` |
 | Transport | MCP Streamable HTTP (2025-03-26) |
 | Sidecar transport | TCP JSON-RPC 2.0 (newline-delimited) |
 
