@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.5...v0.2.6) (2026-06-06)
+
+
+### Documentation
+
+* align core version references with package floor ([dc75409](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/dc7540973e3ca2a56d844f5b6c09e3276a208857))
+
 ## [0.2.5](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.4...v0.2.5) (2026-06-06)
 
 
