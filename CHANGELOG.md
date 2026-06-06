@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.3...v0.2.4) (2026-06-06)
+
+
+### Bug Fixes
+
+* **ci:** set cancel-in-progress to true in release workflow concurrency ([88d915e](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/88d915ecf75a48089e1bc13585a7c48a0dfadbd5))
+
 ## [0.2.3](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.2...v0.2.3) (2026-06-06)
 
 
