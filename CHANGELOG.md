@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.4...v0.2.5) (2026-06-06)
+
+
+### Bug Fixes
+
+* **ci:** isolate workflow_dispatch from push concurrency in release workflow ([#15](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/15)) ([28076a2](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/28076a2028bda88332e64e485366aa3ce7e3adc0))
+
 ## [0.2.4](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.3...v0.2.4) (2026-06-06)
 
 
