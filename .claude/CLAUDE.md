@@ -1,6 +1,6 @@
-# AGENTS.md — dcc-mcp-zbrush
+# CLAUDE.md — dcc-mcp-zbrush (Claude Code entry)
 
-> Navigation map for AI agents. Detailed API lives in `README.md`.
+> Claude-specific entry point. Full navigation map: `AGENTS.md`.
 
 ## Quick facts
 
@@ -8,7 +8,31 @@
 - **Primary mode:** embedded Python inside ZBrush (`DCC_MCP_ZBRUSH_MODE=embedded`)
 - **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`
 - **Do not assume:** ZBrush HTTP REST API — it does not exist in official docs
-- **Rust:** only via `dcc-mcp-core` wheel; no Rust plugin inside ZBrush
+- **MCP endpoint:** `http://127.0.0.1:8765/mcp`
+
+## Cursor / Claude Desktop MCP config
+
+```json
+{
+  "mcpServers": {
+    "zbrush": {
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}
+```
+
+With gateway (multi-DCC):
+
+```json
+{
+  "mcpServers": {
+    "zbrush": {
+      "url": "http://127.0.0.1:9765/mcp"
+    }
+  }
+}
+```
 
 ## Skills-first workflow
 
@@ -19,17 +43,17 @@
 4. execute_python only when no typed skill fits
 ```
 
-Default minimal mode loads `zbrush-scripting` + `zbrush-scene`.
+Default minimal loads `zbrush-scripting` + `zbrush-scene`.
 
 ## Key files
 
 | Path | Role |
 |------|------|
+| `AGENTS.md` | Detailed agent navigation map |
 | `src/dcc_mcp_zbrush/server.py` | `ZBrushMcpServer` composition root |
 | `src/dcc_mcp_zbrush/_executor.py` | In-process dispatcher for embedded VM |
 | `src/dcc_mcp_zbrush/bridge.py` | Sidecar socket bridge client |
 | `bridge/plugin/mcp_socket_bridge.py` | In-ZBrush TCP plugin |
-| `bridge/plugin/dcc_mcp_zbrush/__init__.py` | Auto-start embedded server |
 
 ## ZBrush Python VM constraints
 
@@ -37,13 +61,6 @@ Default minimal mode loads `zbrush-scripting` + `zbrush-scene`.
 - `subprocess` / `multiprocessing` invoking `sys.executable` are unsupported
 - Always register in-process executor in embedded mode
 - Scene APIs must use `affinity: main`
-
-## Agent entry points
-
-| File | Role |
-|------|------|
-| `llms.txt` | Minimal agent entry (modes, install, health check, failure modes) |
-| `.claude/CLAUDE.md` | Claude-specific entry referencing AGENTS.md |
 
 ## External docs
 
