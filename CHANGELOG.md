@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.6...v0.2.7) (2026-06-07)
+
+
+### Documentation
+
+* clarify mode defaults and gateway-port semantics ([#14](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/14)) ([8b4449b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/8b4449baf93dfb83438ab514c3751f9e7d61941b))
+
 ## [0.2.6](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.5...v0.2.6) (2026-06-06)
 
 
