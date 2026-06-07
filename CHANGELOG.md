@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.8](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.7...v0.2.8) (2026-06-07)
+
+
+### Features
+
+* add bootstrap auto-install script + CI smoke test ([aa86410](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/aa8641055e47e61e5243cd7ade93e7c48b8df202))
+
+
+### Bug Fixes
+
+* guard windows-only path test with sys.platform check and fix ruff format ([3e37ae1](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/3e37ae1e735b55a91f181cfa0749262e16986645))
+* sort imports and apply ruff format to test_agent_instruction_files.py ([e5dfcf4](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/e5dfcf4a157a53ac634c863488534334896837ca))
+
 ## [0.2.7](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.6...v0.2.7) (2026-06-07)
 
 
