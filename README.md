@@ -77,8 +77,8 @@ The supported integration paths are:
 
 | Mode | When to use | Stack |
 |------|-------------|-------|
-| **Embedded (recommended)** | ZBrush 2026.1+ with Python SDK | Python plugin inside ZBrush → `dcc-mcp-core` MCP HTTP server → `zbrush.commands` |
-| **Sidecar + socket plugin** | External MCP process / restricted installs | External Python → TCP :9876 → `bridge/plugin/mcp_socket_bridge.py` inside ZBrush |
+| **Embedded** | Inside ZBrush 2026.1+ (plugin auto-start) | Python plugin inside ZBrush → `dcc-mcp-core` MCP HTTP server → `zbrush.commands` |
+| **Sidecar + socket plugin** (CLI default) | External MCP process / restricted installs | External Python → TCP :9876 → `bridge/plugin/mcp_socket_bridge.py` inside ZBrush |
 
 Rust is **not** used inside ZBrush. Like Maya/Houdini, Rust lives in the **`dcc-mcp-core` wheel** (PyO3) that powers the MCP HTTP server. The ZBrush-facing code is **Python only**.
 

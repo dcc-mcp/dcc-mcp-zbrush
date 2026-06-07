@@ -5,8 +5,9 @@
 ## Quick facts
 
 - **Target host:** ZBrush **2026.1+** with embedded Python SDK (`zbrush.commands`)
-- **Primary mode:** embedded Python inside ZBrush (`DCC_MCP_ZBRUSH_MODE=embedded`)
-- **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`
+- **CLI default:** sidecar (`dcc-mcp-zbrush --mode sidecar`) via `bridge/plugin/mcp_socket_bridge.py`
+- **Plugin default:** embedded Python inside ZBrush (`DCC_MCP_ZBRUSH_MODE=embedded`)
+- **Library auto-detect:** `resolve_mode()` detects ZBrush availability; falls back to sidecar
 - **Do not assume:** ZBrush HTTP REST API — it does not exist in official docs
 - **Rust:** only via `dcc-mcp-core` wheel; no Rust plugin inside ZBrush
 
