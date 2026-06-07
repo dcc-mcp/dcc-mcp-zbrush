@@ -105,3 +105,79 @@ jobs:
         with:
           name: zbrush-plugin
           path: dist/plugin/*.zip
+
+  smoke-test:
+    name: Smoke Test (clean venv + bootstrap dry-run + docs drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build wheel
+
+      - name: Build wheel from source
+        run: python -m build --wheel --outdir dist/
+
+      - name: Install wheel into clean venv
+        run: |
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install --upgrade pip
+          /tmp/smoke-venv/bin/pip install dist/dcc_mcp_zbrush-*.whl
+
+      - name: Verify import
+        run: |
+          /tmp/smoke-venv/bin/python -c "import dcc_mcp_zbrush; print('Version:', dcc_mcp_zbrush.__version__)"
+
+      - name: Verify CLI entry point
+        run: |
+          /tmp/smoke-venv/bin/python -c "from dcc_mcp_zbrush.cli import main; print('CLI entry point OK')"
+
+      - name: Build plugin ZIP
+        run: python tools/pack_plugin.py --output dist/plugin
+
+      - name: Verify plugin ZIP structure
+        run: |
+          python -c "
+          import zipfile, sys
+          zf = zipfile.ZipFile('dist/plugin/' + [f for f in __import__('os').listdir('dist/plugin') if f.endswith('.zip')][0])
+          names = zf.namelist()
+          assert any(n.startswith('embedded/') for n in names), 'Missing embedded/'
+          assert any(n.startswith('sidecar/') for n in names), 'Missing sidecar/'
+          assert any(n.startswith('install/') for n in names), 'Missing install/'
+          assert 'sidecar/mcp_socket_bridge.py' in names, 'Missing socket bridge'
+          print(f'Plugin ZIP OK: {len(names)} entries')
+          "
+
+      - name: Bootstrap dry-run — embedded mode
+        run: python tools/bootstrap_agent_install.py --mode embedded --dry-run
+
+      - name: Bootstrap dry-run — sidecar mode
+        run: python tools/bootstrap_agent_install.py --mode sidecar --mcp-target both --dry-run
+
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+
+      - name: Run smoke tests (unit + structure + docs drift)
+        run: pytest tests/test_smoke.py -v --tb=short
+
+  docs-drift:
+    name: Docs Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+
+      - name: Run docs drift tests
+        run: pytest tests/test_smoke.py::TestDocsDrift -v --tb=short
