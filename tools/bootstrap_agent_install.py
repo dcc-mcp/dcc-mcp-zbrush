@@ -100,18 +100,49 @@ def _get_cursor_config_path() -> Path:
     """Return the Cursor MCP config path for the current platform."""
     system = platform.system()
     if system == "Windows":
-        return Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Cursor" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json"
+        return (
+            Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
+            / "Cursor"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
     elif system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Cursor" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json"
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Cursor"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
     else:
-        return Path.home() / ".config" / "Cursor" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json"
+        return (
+            Path.home()
+            / ".config"
+            / "Cursor"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
 
 
 def _get_claude_config_path() -> Path:
     """Return the Claude Desktop MCP config path for the current platform."""
     system = platform.system()
     if system == "Windows":
-        return Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Claude" / "claude_desktop_config.json"
+        return (
+            Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
     elif system == "Darwin":
         return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
     else:
@@ -419,11 +450,13 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
     """Print health check instructions."""
     print("[5/5] Health check")
     print()
-    print(textwrap.dedent(f"""\
+    print(
+        textwrap.dedent(f"""\
         ┌─────────────────────────────────────────────────────────────┐
         │  ✓ dcc-mcp-zbrush bootstrap complete ({mode} mode)           │
         └─────────────────────────────────────────────────────────────┘
-    """))
+    """)
+    )
     print("  Verify the installation:")
     print()
     if mode == "embedded":

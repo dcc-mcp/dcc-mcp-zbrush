@@ -48,6 +48,7 @@ def _load_tool_module(name: str):
 class TestPlatformPaths:
     """Platform-specific path detection for ZBrush plugin and MCP config."""
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only path test")
     def test_zbrush_plugin_dir_windows(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         with patch.object(platform, "system", return_value="Windows"):
@@ -271,6 +272,7 @@ class TestPluginExtraction:
         # Ensure target does not exist before
         if target.exists():
             import shutil
+
             shutil.rmtree(target)
 
         mod.extract_plugin(zip_path, target, "embedded", dry_run=True)
@@ -292,14 +294,18 @@ class TestDryRun:
         with patch.object(mod, "urllib") as mock_urllib:
             # Mock the API to return a minimal release
             mock_resp = mock_urllib.request.urlopen.return_value.__enter__.return_value
-            mock_resp.read.return_value = json.dumps({
-                "tag_name": "v0.2.7",
-                "assets": [{
-                    "name": "dcc-mcp-zbrush-plugin-0.2.7.zip",
-                    "size": 12345,
-                    "browser_download_url": "https://example.com/plugin.zip",
-                }],
-            }).encode("utf-8")
+            mock_resp.read.return_value = json.dumps(
+                {
+                    "tag_name": "v0.2.7",
+                    "assets": [
+                        {
+                            "name": "dcc-mcp-zbrush-plugin-0.2.7.zip",
+                            "size": 12345,
+                            "browser_download_url": "https://example.com/plugin.zip",
+                        }
+                    ],
+                }
+            ).encode("utf-8")
 
             result = mod.download_plugin_zip("0.2.7", tmp_path, dry_run=True)
             # In dry-run mode, no actual file is written
@@ -412,6 +418,7 @@ class TestCleanVenvSmoke:
         # We check that at minimum the module can be loaded
         try:
             import dcc_mcp_zbrush.cli
+
             assert hasattr(dcc_mcp_zbrush.cli, "main")
         except ImportError:
             pytest.skip("dcc-mcp-core not installed — cannot fully test CLI")
@@ -509,14 +516,21 @@ class TestDocsDrift:
     _SOCKET_PORT_FROM_CODE = 9876  # _env.py DEFAULT_SOCKET_PORT / cli.py default
 
     _ENV_VARS = {
-        "DCC_MCP_ZBRUSH_PORT", "DCC_MCP_ZBRUSH_MODE", "DCC_MCP_ZBRUSH_AUTOSTART",
-        "DCC_MCP_ZBRUSH_SOCKET_PORT", "DCC_MCP_GATEWAY_PORT", "DCC_MCP_MINIMAL",
+        "DCC_MCP_ZBRUSH_PORT",
+        "DCC_MCP_ZBRUSH_MODE",
+        "DCC_MCP_ZBRUSH_AUTOSTART",
+        "DCC_MCP_ZBRUSH_SOCKET_PORT",
+        "DCC_MCP_GATEWAY_PORT",
+        "DCC_MCP_MINIMAL",
     }
 
     _ZB_VERSION_REQUIREMENT = "2026.1+"
 
     _BUNDLED_SKILLS = {
-        "zbrush-scripting", "zbrush-scene", "zbrush-subtool", "zbrush-interchange",
+        "zbrush-scripting",
+        "zbrush-scene",
+        "zbrush-subtool",
+        "zbrush-interchange",
     }
 
     _INSTALL_COMMANDS = ["pip install dcc-mcp-zbrush"]
@@ -533,9 +547,7 @@ class TestDocsDrift:
     def test_mcp_port_in_doc(self, doc_file: str) -> None:
         """Verify the MCP port (8765) is referenced in the doc."""
         content = self._read_doc(doc_file)
-        assert str(self._PORT_FROM_CODE) in content, (
-            f"MCP port {self._PORT_FROM_CODE} not found in {doc_file}"
-        )
+        assert str(self._PORT_FROM_CODE) in content, f"MCP port {self._PORT_FROM_CODE} not found in {doc_file}"
 
     @pytest.mark.parametrize("doc_file", ["README.md", "llms.txt"])
     def test_gateway_port_in_doc(self, doc_file: str) -> None:
@@ -549,9 +561,7 @@ class TestDocsDrift:
     def test_zbrush_version_requirement_in_doc(self, doc_file: str) -> None:
         """Verify ZBrush 2026.1+ requirement is present."""
         content = self._read_doc(doc_file)
-        assert "2026.1" in content, (
-            f"ZBrush version requirement 2026.1 not found in {doc_file}"
-        )
+        assert "2026.1" in content, f"ZBrush version requirement 2026.1 not found in {doc_file}"
 
     # --- Env var assertions ---
 
@@ -634,6 +644,7 @@ class TestDocsDrift:
         pyproject = _PROJECT_ROOT / "pyproject.toml"
         content = pyproject.read_text(encoding="utf-8")
         import re
+
         match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
         assert match, "No version found in pyproject.toml"
         version = match.group(1)
