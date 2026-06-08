@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.9](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.8...v0.2.9) (2026-06-08)
+
+
+### Features
+
+* add agent docs single-source-of-truth sync script ([c87d7f0](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/c87d7f09ad76d8ff5fb6789c7f1d7296bec84616))
+
+
+### Bug Fixes
+
+* remove extraneous f-string prefix in sync script ([110aff0](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/110aff0cb9285ce9c3110e8c502935355943464d))
+* use artifact name from YAML instead of hardcoded package name ([82ef1a9](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/82ef1a99d34d7adba6b9a80352f1f4e3e501d7ed))
+
 ## [0.2.8](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.7...v0.2.8) (2026-06-07)
 
 
