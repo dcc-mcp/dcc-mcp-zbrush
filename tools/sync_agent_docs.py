@@ -103,7 +103,7 @@ def _generate_claude_md(data: dict) -> str:
     ]
     lines.append(f"- **Target host:** {t['software']} **{t['version']}** with embedded Python SDK (`{t['sdk']}`)")
     lines.append(f"- **Primary mode:** embedded Python inside {t['software']} (`DCC_MCP_ZBRUSH_MODE=embedded`)")
-    lines.append(f"- **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`")
+    lines.append("- **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`")
     for note in data["do_not_assume"]:
         lines.append(f"- **Do not assume:** {note}")
 
