@@ -229,7 +229,7 @@ def _generate_llms_txt(data: dict) -> str:
             ["Artifact", "Scope", "Install command"],
             [
                 [
-                    f"**PyPI wheel** (`{p['name']}`)",
+                    f"**{a['name']}**" + (f" (`{a['package']}`)" if "package" in a else ""),
                     a["scope"],
                     f"`{a['install']}`",
                 ]
