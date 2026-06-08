@@ -16,8 +16,8 @@ There are three independent distribution channels. Each covers a different scope
 |Artifact|Scope|Install command|
 |---|---|---|
 |**PyPI wheel** (`dcc-mcp-zbrush`)|Python package (src/dcc_mcp_zbrush/) — MCP server, skills, bridge client|`pip install dcc-mcp-zbrush`|
-|**PyPI wheel** (`dcc-mcp-zbrush`)|ZBrush plugin files — auto-start package, socket bridge, install scripts|`Download from latest release and run install-windows.ps1 or install-macos.sh`|
-|**PyPI wheel** (`dcc-mcp-zbrush`)|Everything above + bridge/plugin/ raw sources + tests + tools|`git clone https://github.com/loonghao/dcc-mcp-zbrush.git`|
+|**Plugin ZIP**|ZBrush plugin files — auto-start package, socket bridge, install scripts|`Download from latest release and run install-windows.ps1 or install-macos.sh`|
+|**Repo source**|Everything above + bridge/plugin/ raw sources + tests + tools|`git clone https://github.com/loonghao/dcc-mcp-zbrush.git`|
 
 The wheel does not bundle bridge/plugin/ — that directory is only in the plugin ZIP or the repo checkout.
 
