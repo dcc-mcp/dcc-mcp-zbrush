@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.10](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.9...v0.2.10) (2026-06-08)
+
+### Dependencies
+
+* bump dcc-mcp-core floor to >=0.18.14 for DccServerBase 4 seam controllers (PIP-688)
+
 ## [0.2.9](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.8...v0.2.9) (2026-06-08)
 
 
