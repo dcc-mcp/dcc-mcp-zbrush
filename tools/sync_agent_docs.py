@@ -23,6 +23,7 @@ OUTPUTS = {
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
+
 def _load() -> dict:
     with open(SOURCE, encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -38,6 +39,7 @@ def _fmt_table(headers: list[str], rows: list[list[str]]) -> str:
 
 # ── generators ───────────────────────────────────────────────────────────
 
+
 def _generate_agents_md(data: dict) -> str:
     p = data["project"]
     t = data["target_host"]
@@ -52,16 +54,20 @@ def _generate_agents_md(data: dict) -> str:
     lines.append(f"- **Target host:** {t['software']} **{t['version']}** with embedded Python SDK (`{t['sdk']}`)")
     lines.append(f"- **CLI default:** sidecar (`{p['name']} --mode sidecar`) via `bridge/plugin/mcp_socket_bridge.py`")
     lines.append(f"- **Plugin default:** embedded Python inside {t['software']} (`DCC_MCP_ZBRUSH_MODE=embedded`)")
-    lines.append(f"- **Library auto-detect:** `resolve_mode()` detects {t['software']} availability; falls back to sidecar")
+    lines.append(
+        f"- **Library auto-detect:** `resolve_mode()` detects {t['software']} availability; falls back to sidecar"
+    )
     for note in data["do_not_assume"]:
         lines.append(f"- **Do not assume:** {note}")
 
-    lines.extend([
-        "",
-        "## Skills-first workflow",
-        "",
-        "```",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Skills-first workflow",
+            "",
+            "```",
+        ]
+    )
     for step in data["skills_workflow"]["steps"]:
         lines.append(f"{step}")
     lines.append("```")
@@ -69,19 +75,34 @@ def _generate_agents_md(data: dict) -> str:
     lines.append(f"Default minimal mode loads {', '.join(data['skills_workflow']['default_minimal'])}.")
     lines.append("")
 
-    lines.extend(["## Key files", "", _fmt_table(
-        ["Path", "Role"],
-        [[kf["path"], kf["role"]] for kf in data["key_files"]],
-    ), ""])
+    lines.extend(
+        [
+            "## Key files",
+            "",
+            _fmt_table(
+                ["Path", "Role"],
+                [[kf["path"], kf["role"]] for kf in data["key_files"]],
+            ),
+            "",
+        ]
+    )
 
     lines.extend(["## ZBrush Python VM constraints", ""])
     for c in data["zbrush_vm_constraints"]:
         lines.append(f"- {c}")
 
-    lines.extend(["", "## Agent entry points", "", _fmt_table(
-        ["File", "Role"],
-        [[ep["file"], ep["role"]] for ep in data["agent_entry_points"]],
-    ), ""])
+    lines.extend(
+        [
+            "",
+            "## Agent entry points",
+            "",
+            _fmt_table(
+                ["File", "Role"],
+                [[ep["file"], ep["role"]] for ep in data["agent_entry_points"]],
+            ),
+            "",
+        ]
+    )
 
     lines.extend(["## External docs", ""])
     for doc in data["external_docs"]:
@@ -107,39 +128,43 @@ def _generate_claude_md(data: dict) -> str:
     for note in data["do_not_assume"]:
         lines.append(f"- **Do not assume:** {note}")
 
-    lines.extend([
-        "",
-        "## Cursor / Claude Desktop MCP config",
-        "",
-        "```json",
-        "{",
-        '  "mcpServers": {',
-        f'    "{p["name"]}": {{',
-        f'      "url": "{data["mcp_config"]["direct"]["url"]}"',
-        "    }",
-        "  }",
-        "}",
-        "```",
-        "",
-        "With gateway (multi-DCC):",
-        "",
-        "```json",
-        "{",
-        '  "mcpServers": {',
-        f'    "{p["name"]}": {{',
-        f'      "url": "{data["mcp_config"]["gateway"]["url"]}"',
-        "    }",
-        "  }",
-        "}",
-        "```",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Cursor / Claude Desktop MCP config",
+            "",
+            "```json",
+            "{",
+            '  "mcpServers": {',
+            f'    "{p["name"]}": {{',
+            f'      "url": "{data["mcp_config"]["direct"]["url"]}"',
+            "    }",
+            "  }",
+            "}",
+            "```",
+            "",
+            "With gateway (multi-DCC):",
+            "",
+            "```json",
+            "{",
+            '  "mcpServers": {',
+            f'    "{p["name"]}": {{',
+            f'      "url": "{data["mcp_config"]["gateway"]["url"]}"',
+            "    }",
+            "  }",
+            "}",
+            "```",
+        ]
+    )
 
-    lines.extend([
-        "",
-        "## Skills-first workflow",
-        "",
-        "```",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Skills-first workflow",
+            "",
+            "```",
+        ]
+    )
     for step in data["skills_workflow"]["steps"]:
         lines.append(f"{step}")
     lines.append("```")
@@ -147,10 +172,17 @@ def _generate_claude_md(data: dict) -> str:
     lines.append(f"Default minimal loads {', '.join(data['skills_workflow']['default_minimal'])}.")
     lines.append("")
 
-    lines.extend(["## Key files", "", _fmt_table(
-        ["Path", "Role"],
-        [[kf["path"], kf["role"]] for kf in data["key_files"]],
-    ), ""])
+    lines.extend(
+        [
+            "## Key files",
+            "",
+            _fmt_table(
+                ["Path", "Role"],
+                [[kf["path"], kf["role"]] for kf in data["key_files"]],
+            ),
+            "",
+        ]
+    )
 
     lines.extend(["## ZBrush Python VM constraints", ""])
     for c in data["zbrush_vm_constraints"]:
@@ -224,74 +256,79 @@ def _generate_llms_txt(data: dict) -> str:
     mcp_label_direct = data["mcp_config"]["direct"]["label"]
     mcp_url_direct = data["mcp_config"]["direct"]["url"]
     mcp_url_gateway = data["mcp_config"]["gateway"]["url"]
-    lines.extend([
-        "## MCP config snippets",
-        "",
-        f"### {mcp_label_direct}",
-        "",
-        "```json",
-        "{",
-        '  "mcpServers": {',
-        f'    "{p["name"]}": {{',
-        f'      "url": "{mcp_url_direct}"',
-        "    }",
-        "  }",
-        "}",
-        "```",
-        "",
-        "### With gateway (multi-DCC)",
-        "",
-        "```json",
-        "{",
-        '  "mcpServers": {',
-        f'    "{p["name"]}": {{',
-        f'      "url": "{mcp_url_gateway}"',
-        "    }",
-        "  }",
-        "}",
-        "```",
-        "",
-    ])
-
-    # env vars table
-    lines.extend([
-        "## Environment variables",
-        "",
-        _fmt_table(
-            ["Variable", "Default", "Purpose"],
-            [[ev["name"], f"`{ev['default']}`", ev["purpose"]] for ev in data["env_vars"]],
-        ),
-        "",
-        "## Bundled skills",
-        "",
-        _fmt_table(
-            ["Skill", "Tools"],
-            [
-                [s["name"], ", ".join(s["tools"]) if s["tools"] else "—"]
-                for s in data["bundled_skills"]
-            ],
-        ),
-        "",
-        "## Health check",
-        "",
-    ])
-    for hc in data["health_checks"]:
-        lines.extend([
-            "```bash",
-            hc,
+    lines.extend(
+        [
+            "## MCP config snippets",
+            "",
+            f"### {mcp_label_direct}",
+            "",
+            "```json",
+            "{",
+            '  "mcpServers": {',
+            f'    "{p["name"]}": {{',
+            f'      "url": "{mcp_url_direct}"',
+            "    }",
+            "  }",
+            "}",
             "```",
             "",
-        ])
+            "### With gateway (multi-DCC)",
+            "",
+            "```json",
+            "{",
+            '  "mcpServers": {',
+            f'    "{p["name"]}": {{',
+            f'      "url": "{mcp_url_gateway}"',
+            "    }",
+            "  }",
+            "}",
+            "```",
+            "",
+        ]
+    )
 
-    lines.extend([
-        "## Common failure modes",
-        "",
-        _fmt_table(
-            ["Problem", "Likely cause", "Fix"],
-            [[fm["problem"], fm["cause"], fm["fix"]] for fm in data["failure_modes"]],
-        ),
-        "",
-    ])
+    # env vars table
+    lines.extend(
+        [
+            "## Environment variables",
+            "",
+            _fmt_table(
+                ["Variable", "Default", "Purpose"],
+                [[ev["name"], f"`{ev['default']}`", ev["purpose"]] for ev in data["env_vars"]],
+            ),
+            "",
+            "## Bundled skills",
+            "",
+            _fmt_table(
+                ["Skill", "Tools"],
+                [[s["name"], ", ".join(s["tools"]) if s["tools"] else "—"] for s in data["bundled_skills"]],
+            ),
+            "",
+            "## Health check",
+            "",
+        ]
+    )
+    for hc in data["health_checks"]:
+        lines.extend(
+            [
+                "```bash",
+                hc,
+                "```",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Common failure modes",
+            "",
+            _fmt_table(
+                ["Problem", "Likely cause", "Fix"],
+                [[fm["problem"], fm["cause"], fm["fix"]] for fm in data["failure_modes"]],
+            ),
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
