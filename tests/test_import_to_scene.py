@@ -8,7 +8,6 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 
 _SKILLS_ROOT = Path(__file__).parent.parent / "src" / "dcc_mcp_zbrush" / "skills"
