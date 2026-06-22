@@ -1,0 +1,54 @@
+tools:
+  - name: import_to_scene
+    description: >-
+      Import an asset (OBJ or FBX) into ZBrush as a new subtool.
+      Accepts an AssetDescriptor-shaped payload (asset_id + variants with
+      local_path/format fields). Returns an ImportToSceneResult with the
+      list of imported subtool names and any non-fatal warnings.
+    source_file: scripts/import_to_scene.py
+    execution: sync
+    affinity: main
+    group: core
+    annotations:
+      destructive_hint: false
+      read_only_hint: false
+      idempotent_hint: false
+    inputSchema:
+      type: object
+      required: [asset_id, variants]
+      properties:
+        asset_id:
+          type: string
+          description: Stable identifier for the asset (e.g. "arch/desk").
+        variants:
+          type: array
+          description: One or more file variants; each must have a local_path field.
+          items:
+            type: object
+            required: [local_path]
+            properties:
+              local_path:
+                type: string
+                description: Absolute or relative path to the asset file on disk.
+              format:
+                type: string
+                description: "File format hint: obj, fbx, etc. Defaults to unknown."
+              preferred:
+                type: boolean
+                description: Whether this variant is preferred for import.
+        unit_hint:
+          type: string
+          description: "Unit hint: meter, centimeter, inch, or unitless."
+        up_axis:
+          type: string
+          description: "Up-axis of the source asset: y or z."
+        material_mode:
+          type: string
+          description: "Material import mode: as_authored, default_gray, or skip."
+    next-tools:
+      on-success:
+        - tool: zbrush_scene__list_subtools
+          reason: Confirm the new subtool appeared in the scene.
+      on-failure:
+        - tool: zbrush_scene__get_scene_info
+          reason: Check scene state before retrying import.

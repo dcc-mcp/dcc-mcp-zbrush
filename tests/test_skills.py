@@ -17,6 +17,7 @@ _SKILL_DIRS = (
     "zbrush-scene",
     "zbrush-subtool",
     "zbrush-interchange",
+    "zbrush-import-to-scene",
 )
 
 

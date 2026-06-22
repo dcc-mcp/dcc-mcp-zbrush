@@ -8,7 +8,7 @@ Progressive loading stages for `dcc-mcp-zbrush`. Minimal mode loads **bootstrap 
 | `scene` | `zbrush-scene` | yes |
 | `authoring` | `zbrush-subtool` | no |
 | `interchange` | `zbrush-interchange` | no |
-| `pipeline` | _(planned: publish, validation, render)_ | no |
+| `pipeline` | `zbrush-import-to-scene` | no |
 
 ## Common chains
 
@@ -18,6 +18,7 @@ Progressive loading stages for `dcc-mcp-zbrush`. Minimal mode loads **bootstrap 
 | Inspect active tool | `zbrush_scene__get_scene_info` → `zbrush_scene__list_subtools` |
 | Switch subtool | `load_skill("zbrush-subtool")` → `zbrush_subtool__select_subtool` |
 | Export to OBJ | `zbrush_subtool__select_subtool` → `load_skill("zbrush-interchange")` → `zbrush_interchange__export_active_subtool_obj` |
+| Import asset (OBJ/FBX) | `load_skill("zbrush-import-to-scene")` → `zbrush_import_to_scene__import_to_scene` → `zbrush_scene__list_subtools` |
 | Escape hatch | `load_skill("zbrush-scripting")` → `zbrush_scripting__execute_python` (last resort) |
 
 ## Skill inventory
@@ -28,3 +29,4 @@ Progressive loading stages for `dcc-mcp-zbrush`. Minimal mode loads **bootstrap 
 | `zbrush-scene` | `get_scene_info`, `list_subtools` | domain |
 | `zbrush-subtool` | `select_subtool`, `get_subtool_status` | domain |
 | `zbrush-interchange` | `export_active_subtool_obj` | domain |
+| `zbrush-import-to-scene` | `import_to_scene` | domain |
