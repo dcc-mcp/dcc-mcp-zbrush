@@ -46,6 +46,8 @@ def _handle_request(payload: Dict[str, Any]) -> Dict[str, Any]:
             result = _get_subtool_status(None if index is None else int(index))
         elif method == "export_active_subtool_obj":
             result = _export_active_subtool_obj(str(params.get("output_path", "")))
+        elif method == "import_to_scene":
+            result = _import_to_scene(str(params.get("file_path", "")))
         else:
             return {
                 "jsonrpc": "2.0",
@@ -161,6 +163,40 @@ def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
         "output_path": abs_path,
         "active_tool_path": path,
         "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+    }
+
+
+def _import_to_scene(file_path: str) -> Dict[str, Any]:
+    zbc = _import_zbc()
+    if not file_path:
+        return {
+            "success": False,
+            "message": "file_path must not be empty",
+            "error": "FILE_PATH_MISSING",
+            "imported_nodes": [],
+        }
+    abs_path = os.path.abspath(file_path)
+    if not os.path.isfile(abs_path):
+        return {
+            "success": False,
+            "message": f"File does not exist: {abs_path}",
+            "error": "FILE_NOT_FOUND",
+            "imported_nodes": [],
+        }
+    subtool_count_before = int(zbc.get_subtool_count())
+    zbc.set_next_filename(abs_path)
+    zbc.press("Tool:Import")
+    subtool_count_after = int(zbc.get_subtool_count())
+    active_path = str(zbc.get_active_tool_path() or "")
+    subtool_name = active_path.rsplit("/", 1)[-1] if active_path else ""
+    imported_nodes = [subtool_name] if subtool_name else []
+    return {
+        "success": True,
+        "file_path": abs_path,
+        "imported_nodes": imported_nodes,
+        "subtool_count_before": subtool_count_before,
+        "subtool_count_after": subtool_count_after,
+        "active_tool_path": active_path,
     }
 
 
