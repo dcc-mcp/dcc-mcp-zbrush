@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.9...v0.2.10) (2026-06-22)
+
+
+### Features
+
+* implement zbrush-import-to-scene skill (PIP-1895) ([#29](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/29)) ([dec6508](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/dec65089d2c61ea33ecada036b12f42999d344a3))
+
 ## [0.2.10](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.9...v0.2.10) (2026-06-08)
 
 ### Dependencies
