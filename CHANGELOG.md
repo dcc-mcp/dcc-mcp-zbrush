@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.12](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.11...v0.2.12) (2026-06-26)
+
+
+### Features
+
+* embedded ZBrush adapter, skills, CI, and installable plugin package ([5d196a0](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/5d196a08fed5f96aa95a289247162526e77f6468))
+* initial placeholder for dcc-mcp-zbrush ([8e89623](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/8e89623f4ac73bcc1ce2c7edb54d40f41c7ed1ed))
+
+
+### Bug Fixes
+
+* recover main from v0.2.11 ([f071449](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/f0714496bd840ac56e838f0803f41b10d9db726e))
+
 ## [0.2.11](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.10...v0.2.11) (2026-06-23)
 
 
