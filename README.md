@@ -9,7 +9,67 @@ ZBrush adapter for the [DCC Model Context Protocol](https://github.com/loonghao/
 
 > **Requires ZBrush 2026.1+** with the official [Python SDK](https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html) (CPython 3.11 embedded in ZBrush).
 
-## Architecture decision
+## Quick install
+
+### 1. Install the Python package
+
+```bash
+pip install dcc-mcp-zbrush
+```
+
+This installs the `dcc-mcp-zbrush` Python package — the MCP HTTP server that bridges AI agents to ZBrush. It does **not** include ZBrush plugin files (see step 2).
+
+### 2. Install the ZBrush plugin
+
+The plugin files (auto-start script, socket bridge) are distributed separately. Download the plugin ZIP from the [latest GitHub Release](https://github.com/loonghao/dcc-mcp-zbrush/releases/latest):
+
+```
+dcc-mcp-zbrush-plugin-<version>.zip
+```
+
+Then run the install script inside the ZIP:
+
+**Windows** (PowerShell):
+```powershell
+.\install\install-windows.ps1
+```
+
+**macOS** (Terminal):
+```bash
+chmod +x install/install-macos.sh && ./install/install-macos.sh
+```
+
+This copies the plugin into your ZBrush `ZStartup/ZPlugs64` directory so it loads automatically on startup.
+
+### 3. Restart ZBrush
+
+Launch or restart ZBrush. The plugin auto-starts the MCP server in embedded mode.
+
+### 4. Health check
+
+Verify the server is running:
+
+```bash
+curl http://127.0.0.1:8765/mcp
+```
+
+### 5. Configure your AI client
+
+Add the MCP server to your AI client config (Cursor, Claude Desktop, etc.):
+
+```json
+{
+  "mcpServers": {
+    "zbrush": {
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}
+```
+
+---
+
+## How it works
 
 ZBrush **does not ship a built-in HTTP REST server**. The pre-alpha scaffold that assumed `Preferences > Network > Enable HTTP Server` was incorrect.
 
@@ -17,8 +77,8 @@ The supported integration paths are:
 
 | Mode | When to use | Stack |
 |------|-------------|-------|
-| **Embedded (recommended)** | ZBrush 2026.1+ with Python SDK | Python plugin inside ZBrush → `dcc-mcp-core` MCP HTTP server → `zbrush.commands` |
-| **Sidecar + socket plugin** | External MCP process / restricted installs | External Python → TCP :9876 → `bridge/plugin/mcp_socket_bridge.py` inside ZBrush |
+| **Embedded** | Inside ZBrush 2026.1+ (plugin auto-start) | Python plugin inside ZBrush → `dcc-mcp-core` MCP HTTP server → `zbrush.commands` |
+| **Sidecar + socket plugin** (CLI default) | External MCP process / restricted installs | External Python → TCP :9876 → `bridge/plugin/mcp_socket_bridge.py` inside ZBrush |
 
 Rust is **not** used inside ZBrush. Like Maya/Houdini, Rust lives in the **`dcc-mcp-core` wheel** (PyO3) that powers the MCP HTTP server. The ZBrush-facing code is **Python only**.
 
@@ -38,7 +98,7 @@ AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
 ## Features (v0.2.0)
 
 - `DccServerBase` adapter with progressive skill loading
-- Bundled skills: `zbrush-scripting`, `zbrush-scene`
+- Bundled skills: `zbrush-scripting`, `zbrush-scene`, `zbrush-subtool`, `zbrush-interchange`
 - In-process executor for ZBrush's embedded Python VM
 - Optional socket bridge plugin for sidecar deployments
 - Gateway election compatible with `dcc-mcp-core`
@@ -47,46 +107,7 @@ AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
 
 - ZBrush **2026.1+**
 - Python **3.9+** on the sidecar host (ZBrush itself ships 3.11)
-- `dcc-mcp-core >= 0.18.2`
-
-## Installation
-
-### Embedded mode (inside ZBrush)
-
-1. Install the package into a directory on `PYTHONPATH` or `ZBRUSH_PLUGIN_PATH`:
-
-```bash
-pip install dcc-mcp-zbrush -t /path/to/zbrush/python/libs
-```
-
-2. Copy the auto-start plugin:
-
-```bash
-# Windows
-copy bridge\plugin\dcc_mcp_zbrush %USERPROFILE%\Documents\ZBrushData\ZStartup\ZPlugs64\dcc_mcp_zbrush
-
-# macOS
-cp -R bridge/plugin/dcc_mcp_zbrush ~/Library/Application\ Support/ZBrush/ZStartup/ZPlugs64/
-```
-
-3. Restart ZBrush. MCP endpoint: `http://127.0.0.1:8765/mcp`
-
-Or from ZBrush Python console:
-
-```python
-import dcc_mcp_zbrush
-dcc_mcp_zbrush.start_server(mode="embedded")
-```
-
-### Sidecar mode (external process)
-
-1. Install the socket bridge plugin in ZBrush (`bridge/plugin/mcp_socket_bridge.py`).
-2. Start ZBrush.
-3. Run the MCP server outside ZBrush:
-
-```bash
-dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
-```
+- `dcc-mcp-core >= 0.18.7`
 
 ## Environment variables
 
@@ -105,30 +126,16 @@ dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
 |-------|-------|
 | `zbrush-scripting` | `execute_python`, `get_session_info` |
 | `zbrush-scene` | `get_scene_info`, `list_subtools` |
+| `zbrush-subtool` | `select_subtool`, `get_subtool_status` |
+| `zbrush-interchange` | `export_active_subtool_obj` |
 
-## Cursor / Claude MCP config
+## Path concepts
 
-```json
-{
-  "mcpServers": {
-    "zbrush": {
-      "url": "http://127.0.0.1:8765/mcp"
-    }
-  }
-}
-```
+- **PYTHONPATH** — where Python looks for packages (`pip install` handles this)
+- **ZBRUSH_PLUGIN_PATH** / **ZStartup/ZPlugs64** — where ZBrush loads auto-start plugins
 
-With gateway:
-
-```json
-{
-  "mcpServers": {
-    "zbrush": {
-      "url": "http://127.0.0.1:9765/mcp"
-    }
-  }
-}
-```
+`pip install dcc-mcp-zbrush` puts the Python package on `PYTHONPATH`.  
+The plugin ZIP goes into `ZBRUSH_PLUGIN_PATH` (handled by the install scripts above).
 
 ## Skill authoring
 
@@ -145,6 +152,22 @@ def my_tool(**kwargs) -> dict:
     count = zbc.get_subtool_count()
     return zb_success(f"{count} subtool(s)", count=count)
 ```
+
+## Sidecar mode (optional)
+
+If you cannot install the embedded plugin or need the MCP server to run outside ZBrush:
+
+1. The plugin ZIP already includes `sidecar/mcp_socket_bridge.py` — copy it to `ZPlugs64` (the install scripts handle this).
+2. Start ZBrush.
+3. Run the MCP server outside ZBrush:
+
+```bash
+dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
+```
+
+## Development
+
+See [docs/development.md](docs/development.md) for source-based setup, testing, and contribution workflow.
 
 ## References
 

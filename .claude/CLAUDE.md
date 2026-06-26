@@ -1,15 +1,38 @@
-# AGENTS.md — dcc-mcp-zbrush
+# CLAUDE.md — dcc-mcp-zbrush (Claude Code entry)
 
-> Navigation map for AI agents. Detailed API lives in `README.md`.
+> Claude-specific entry point. Full navigation map: `AGENTS.md`.
 
 ## Quick facts
 
 - **Target host:** ZBrush **2026.1+** with embedded Python SDK (`zbrush.commands (embedded Python SDK)`)
-- **CLI default:** sidecar (`dcc-mcp-zbrush --mode sidecar`) via `bridge/plugin/mcp_socket_bridge.py`
-- **Plugin default:** embedded Python inside ZBrush (`DCC_MCP_ZBRUSH_MODE=embedded`)
-- **Library auto-detect:** `resolve_mode()` detects ZBrush availability; falls back to sidecar
+- **Primary mode:** embedded Python inside ZBrush (`DCC_MCP_ZBRUSH_MODE=embedded`)
+- **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`
 - **Do not assume:** ZBrush HTTP REST API — it does not exist in official docs
 - **Do not assume:** Rust: only via dcc-mcp-core wheel; no Rust plugin inside ZBrush
+
+## Cursor / Claude Desktop MCP config
+
+```json
+{
+  "mcpServers": {
+    "dcc-mcp-zbrush": {
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}
+```
+
+With gateway (multi-DCC):
+
+```json
+{
+  "mcpServers": {
+    "dcc-mcp-zbrush": {
+      "url": "http://127.0.0.1:9765/mcp"
+    }
+  }
+}
+```
 
 ## Skills-first workflow
 
@@ -20,7 +43,7 @@ call zbrush_scene__list_subtools
 execute_python only when no typed skill fits
 ```
 
-Default minimal mode loads zbrush-scripting, zbrush-scene.
+Default minimal loads zbrush-scripting, zbrush-scene.
 
 ## Key files
 
@@ -38,13 +61,6 @@ Default minimal mode loads zbrush-scripting, zbrush-scene.
 - subprocess / multiprocessing invoking sys.executable are unsupported
 - Always register in-process executor in embedded mode
 - Scene APIs must use affinity: main
-
-## Agent entry points
-
-|File|Role|
-|---|---|
-|llms.txt|Minimal agent entry (modes, install, health check, failure modes)|
-|.claude/CLAUDE.md|Claude-specific entry referencing AGENTS.md|
 
 ## External docs
 

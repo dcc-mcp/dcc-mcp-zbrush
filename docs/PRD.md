@@ -1,45 +1,50 @@
 # Product Requirements Document: dcc-mcp-zbrush
 
-**Version:** 0.1.0  
-**Status:** Draft  
-**Owner:** Long Hao  
-**Last Updated:** 2026-04-11
+**Version:** 0.2.2
+**Status:** Draft
+**Owner:** Long Hao
+**Last Updated:** 2026-06-06
 
 ---
 
 ## 1. Background & Motivation
 
-The DCC-MCP ecosystem (`dcc-mcp-core`) provides a standardized way for AI agents to
-interact with Digital Content Creation (DCC) tools via the Model Context Protocol (MCP).
-Existing adapters (Maya, Blender, Houdini) rely on an **embedded Python interpreter** inside
-the DCC application.
+The DCC-MCP ecosystem (`dcc-mcp-core`) provides a standardized way for AI agents to interact with Digital Content Creation (DCC) tools via the Model Context Protocol (MCP). Existing adapters (Maya, Blender, Houdini) rely on an **embedded Python interpreter** inside the DCC application.
 
-**ZBrush** is the industry-standard sculpting tool used by character artists, game studios,
-and VFX pipelines. Unlike Maya/Blender, ZBrush does not expose an embedded Python interpreter.
-Instead, **ZBrush 2024+** provides a built-in **HTTP REST server** that accepts ZScript commands.
+**ZBrush** (Maxon) is the industry-standard sculpting tool used by character artists, game studios, and VFX pipelines. **ZBrush 2026.1+** ships with a first-class **embedded Python SDK** (`zbrush.commands`) that exposes scene interrogation, subtool management, mesh export, and ZBrush UI automation.
 
-This PRD covers the design and requirements for `dcc-mcp-zbrush`, a bridge adapter that
-connects AI agents to ZBrush via this HTTP API.
+This PRD covers the design and requirements for `dcc-mcp-zbrush`, an MCP adapter that connects AI agents to ZBrush via the embedded Python SDK as the **primary path**, with a **sidecar TCP socket bridge as fallback** for environments where the MCP server cannot run inside ZBrush.
 
 ---
 
 ## 2. Goals
 
 ### Primary Goals
-1. Allow AI agents (Claude, Cursor, etc.) to query and control ZBrush sculpting sessions
-2. Implement the same skill-based architecture as `dcc-mcp-maya` (consistent UX for developers)
-3. Provide a clear bridge pattern for other non-Python DCCs (Photoshop, etc.) to follow
+1. Allow AI agents (Claude Desktop, Cursor, custom MCP hosts) to query and control ZBrush sculpting sessions
+2. Support **two runtime modes**: embedded (in-process) and sidecar (socket bridge)
+3. Implement the same skill-based architecture as `dcc-mcp-maya` (consistent UX for developers)
 
 ### Non-Goals
-- Direct ZBrush plugin development (the HTTP server is already in ZBrush 2024+)
-- Supporting ZBrush versions before 2024
-- Replacing ZBrush's native ZScript workflow
+- Supporting ZBrush versions before 2026.1 (no embedded Python SDK)
+- Replacing ZBrush's native UI or ZScript workflow
+- Direct manipulation of ZBrush render engine (deferred)
 
 ---
 
 ## 3. Architecture
 
-### 3.1 Component Diagram
+### 3.1 Two Modes
+
+The adapter supports two mutually exclusive modes, resolved automatically or via `DCC_MCP_ZBRUSH_MODE`:
+
+| Mode | Description | Detection |
+|------|-------------|-----------|
+| `embedded` | **Primary.** MCP server runs inside ZBrush's Python VM. Skills call `zbrush.commands` directly. | `import zbrush.commands` succeeds |
+| `sidecar` | **Fallback.** MCP server runs as a standalone process; tool calls forwarded via TCP JSON-RPC to a ZBrush plugin socket. | `import zbrush.commands` fails |
+
+Auto-detection logic (`_env.resolve_mode`): try `embedded` first; if `zbrush.commands` is not available, fall back to `sidecar`.
+
+### 3.2 Component Diagram — Embedded Mode (Primary)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -48,211 +53,367 @@ connects AI agents to ZBrush via this HTTP API.
                           │ MCP Streamable HTTP (2025-03-26 spec)
                           │ POST /mcp  (tools/call, tools/list)
 ┌─────────────────────────▼────────────────────────────────────┐
-│  ZBrushMcpServer  (dcc-mcp-zbrush, port 8765)                │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │  dcc-mcp-core                                          │  │
-│  │  ├── McpHttpServer (axum HTTP)                         │  │
-│  │  ├── ActionRegistry + ActionDispatcher                 │  │
-│  │  └── SkillCatalog (discovers zbrush-* skills)          │  │
-│  └────────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │  ZBrushBridge  (httpx HTTP client)                     │  │
-│  │  POST /api/zscript  GET /api/info  GET /api/tools      │  │
-└──┴─────────────────────┬──────────────────────────────────┘──┘
-                          │ HTTP REST (port 8080)
-┌─────────────────────────▼────────────────────────────────────┐
-│  ZBrush 2024+  (built-in HTTP server)                        │
-│  ├── ZScript execution engine                                │
-│  ├── ZTool / SubTool management                              │
-│  └── Mesh export (OBJ, FBX, ZTL, STL)                       │
+│  ZBrush 2026.1+  (process)                                    │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  ZBrushMcpServer  (dcc-mcp-zbrush, port 8765)           │  │
+│  │  ┌─────────────────────────────────────────────────┐    │  │
+│  │  │  dcc-mcp-core                                    │    │  │
+│  │  │  ├── McpHttpServer (axum HTTP)                   │    │  │
+│  │  │  ├── DccServerBase                               │    │  │
+│  │  │  ├── InProcessCallableDispatcher                 │    │  │
+│  │  │  └── SkillCatalog (discovers zbrush-* skills)    │    │  │
+│  │  └─────────────────────────────────────────────────┘    │  │
+│  │  ┌─────────────────────────────────────────────────┐    │  │
+│  │  │  _executor: InProcessCallableDispatcher         │    │  │
+│  │  │  └── calls zbrush.commands directly             │    │  │
+│  │  └─────────────────────────────────────────────────┘    │  │
+│  └─────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 DccCapabilities
+### 3.3 Component Diagram — Sidecar Mode (Fallback)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  AI Agent (Claude Desktop / Cursor / Custom MCP Host)        │
+└─────────────────────────┬────────────────────────────────────┘
+                          │ MCP Streamable HTTP (2025-03-26 spec)
+                          │ POST /mcp
+┌─────────────────────────▼────────────────────────────────────┐
+│  dcc-mcp-zbrush sidecar process (Python)                      │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  ZBrushMcpServer  (port 8765)                           │  │
+│  │  ├── dcc-mcp-core stack                                 │  │
+│  │  └── SocketBridge (TCP JSON-RPC client)                 │  │
+│  └─────────────────────────┬───────────────────────────────┘  │
+└────────────────────────────┼──────────────────────────────────┘
+                             │ TCP JSON-RPC (port 9876)
+┌────────────────────────────▼──────────────────────────────────┐
+│  ZBrush 2026.1+  (process)                                    │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  mcp_socket_bridge.py  (ZStartup/ZPlugs64 plugin)       │  │
+│  │  ├── TCP server on 127.0.0.1:9876                       │  │
+│  │  └── calls zbrush.commands for each RPC method          │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 3.4 DccCapabilities
 
 ```python
 from dcc_mcp_core import DccCapabilities
 
-caps = DccCapabilities.http_bridge("http://localhost:8080")
-# Equivalent to:
 caps = DccCapabilities(
-    has_embedded_python=False,
-    bridge_kind="http",
-    bridge_endpoint="http://localhost:8080",
+    has_embedded_python=True,       # ZBrush 2026.1+ primary
+    bridge_kind="socket",           # sidecar fallback (TCP JSON-RPC)
+    bridge_endpoint="127.0.0.1:9876",
     scene_info=True,
     file_operations=True,
-    snapshot=False,  # ZBrush render is complex; deferred to v0.3
+    snapshot=False,                 # render deferred
 )
 ```
 
-### 3.3 Skill Execution Flow
+### 3.5 Skill Execution Flow — Embedded Mode
 
 ```
-Agent calls tools/call "zbrush_sculpt__list_tools"
+Agent calls tools/call "zbrush_scene__list_subtools"
     ↓
-ActionDispatcher routes to registered handler
+DccServerBase dispatches to skill handler
     ↓
-Skill script: list_tools.py
+Skill: list_subtools.py
     ↓
-get_bridge() → ZBrushBridge instance
+import zbrush.commands as zbc  (embedded, in-process)
     ↓
-bridge.list_tools() → GET http://localhost:8080/api/tools
+zbc.get_subtool_count(), zbc.get_subtool_status(index)
     ↓
-ZBrush returns JSON: [{"name": "ZSphere", ...}, ...]
+zb_success("Found 3 SubTools", subtools=[...]) → dict
     ↓
-zb_success("Found 3 ZTool(s)", tools=[...]) → dict
+MCP tools/call response → Agent
+```
+
+### 3.6 Skill Execution Flow — Sidecar Mode
+
+```
+Agent calls tools/call "zbrush_scene__list_subtools"
     ↓
-serialize_result(arm, SerializeFormat.Json) → JSON string
+DccServerBase dispatches to skill handler
+    ↓
+Skill: list_subtools.py
+    ↓
+api.get_bridge() → SocketBridge instance
+    ↓
+bridge.call("list_subtools") → TCP JSON-RPC request
+    ↓
+mcp_socket_bridge.py executes zbrush.commands inside ZBrush
+    ↓
+JSON-RPC response → SocketBridge
+    ↓
+zb_success("Found 3 SubTools", subtools=[...]) → dict
     ↓
 MCP tools/call response → Agent
 ```
 
 ---
 
-## 4. ZBrush HTTP API Reference (ZBrush 2024+)
+## 4. Modes & Environment
 
-### 4.1 Known Endpoints (from ZBrush 2024 documentation)
+### 4.1 Mode Resolution
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/info` | ZBrush version, status |
-| POST | `/api/zscript` | Execute ZScript code |
-| GET | `/api/tools` | List all ZTools |
-| GET | `/api/tools/active` | Get active ZTool info |
-| POST | `/api/export` | Export mesh to file |
-| GET | `/api/subtools` | List SubTools of active ZTool |
-
-### 4.2 Request/Response Format
-
-```json
-// POST /api/zscript
-{
-  "code": "[IButton,/Zplugin/SubTool Master/Bake All SubTools,Bake,]",
-  "timeout": 30000
-}
-
-// Response
-{
-  "success": true,
-  "output": "SubTools baked successfully",
-  "error": null,
-  "execution_time_ms": 1234
-}
+```
+DCC_MCP_ZBRUSH_MODE  →  "embedded" | "sidecar"
+    ↓ not set
+Auto-detect:
+  - import zbrush.commands succeeds  →  embedded
+  - import fails                      →  sidecar
 ```
 
-### 4.3 Authentication
+### 4.2 Env Vars
 
-Optional API key via `X-ZBrush-API-Key` header (configurable in ZBrush Preferences > Network).
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DCC_MCP_ZBRUSH_MODE` | auto | `embedded` or `sidecar` |
+| `DCC_MCP_ZBRUSH_PORT` | 8765 | MCP HTTP server port |
+| `DCC_MCP_ZBRUSH_SOCKET_HOST` | 127.0.0.1 | Socket bridge host |
+| `DCC_MCP_ZBRUSH_SOCKET_PORT` | 9876 | Socket bridge port |
+| `DCC_MCP_ZBRUSH_AUTOSTART` | 1 | Auto-start embedded server on ZBrush launch |
+| `DCC_MCP_ZBRUSH_ENABLE_GATEWAY_FAILOVER` | true | Gateway failover toggle |
+| `DCC_MCP_ZBRUSH_SKILL_PATHS` | "" | Colon/semicolon-separated extra skill search paths |
+| `DCC_MCP_MINIMAL` | 1 | Enable minimal mode (bootstrap + scene only) |
+
+### 4.3 MCP Endpoint
+
+```
+http://127.0.0.1:8765/mcp
+```
+
+Streamable HTTP transport per MCP 2025-03-26 spec. The Rust `axum` HTTP server is embedded in `dcc-mcp-core`.
 
 ---
 
-## 5. Skill Catalog
+## 5. ZBrush Python SDK Reference (ZBrush 2026.1+)
 
-### 5.1 Phase 1 (v0.2.0) — Core
+### 5.1 Core Module
 
-#### `zbrush-sculpt`
+```
+zbrush.commands  (abbreviated zbc)
+```
+
+Provided by Maxon SDK `zbrush-2026.1.0+`. Not available in any earlier ZBrush version.
+
+### 5.2 Known API Surface (mapped by bundled skills)
+
+| Function | Description |
+|----------|-------------|
+| `zbrush_info(index)` | ZBrush version `(major, minor)` |
+| `get_subtool_count()` | Number of SubTools |
+| `get_subtool_status(index)` | Bitmask: bit 0=visible, bit 1=locked |
+| `get_active_subtool_index()` | Current SubTool index |
+| `select_subtool(index)` | Switch active SubTool |
+| `get_active_tool_path()` | Full ZTool path string |
+| `set_next_filename(path)` | Set export filename before pressing Tool:Export |
+
+Full SDK reference: https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html
+
+### 5.3 Environment Restrictions
+
+- Persistent Python interpreter shared across scripts (no per-run isolation)
+- `subprocess`/`multiprocessing` using `sys.executable` are **unsupported** inside ZBrush's VM
+- Scene APIs require `affinity: main` thread
+- `exec()` is available; skill code runs in the embedded interpreter
+
+---
+
+## 6. Sidecar Socket Bridge
+
+### 6.1 Protocol
+
+TCP JSON-RPC 2.0, newline-delimited frames. Each request is a JSON object followed by `\n`; the response is a JSON object followed by `\n`.
+
+**Request:**
+```json
+{"jsonrpc": "2.0", "id": 1, "method": "list_subtools", "params": {}}
+```
+
+**Response:**
+```json
+{"jsonrpc": "2.0", "id": 1, "result": {"count": 3, "subtools": [...]}}
+```
+
+### 6.2 RPC Methods
+
+| Method | Params | Description |
+|--------|--------|-------------|
+| `ping` | — | Health check |
+| `get_session_info` | — | ZBrush version, active tool, subtool count |
+| `get_scene_info` | — | Active tool path, subtool count, active subtool index |
+| `list_subtools` | — | All SubTools with visibility/lock flags |
+| `select_subtool` | `index` | Switch active SubTool |
+| `get_subtool_status` | `index` (optional) | Status for one SubTool (default: active) |
+| `execute_python` | `code`, `context` | Execute arbitrary Python in ZBrush VM |
+| `export_active_subtool_obj` | `output_path` | Export active SubTool as OBJ |
+
+### 6.3 Distribution Sources
+
+The project ships through three independent channels. Know the boundary of each:
+
+| Channel | Contains | Does NOT contain |
+|---------|----------|------------------|
+| **PyPI wheel** (`pip install dcc-mcp-zbrush`) | Python MCP server, skills, CLI entry point, `SocketBridge` client | ZBrush plugin files (`bridge/plugin/`) |
+| **Plugin ZIP** (GitHub Release asset) | Auto-start plugin package, `mcp_socket_bridge.py`, install scripts | Python package (`src/dcc_mcp_zbrush/`) |
+| **Repo source** (`git clone`) | Everything above + tests + tools + `bridge/plugin/` raw sources | — |
+
+The wheel (`pyproject.toml:46-47`) only packages `src/dcc_mcp_zbrush`. The `bridge/plugin/` directory is **not** in the wheel — it is distributed via the plugin ZIP or available in the repo checkout.
+
+### 6.4 Plugin Installation
+
+Copy `bridge/plugin/mcp_socket_bridge.py` into `ZStartup/ZPlugs64` or expose via `ZBRUSH_PLUGIN_PATH`, then **restart ZBrush**. The plugin auto-starts the TCP listener on next ZBrush launch.
+
+### 6.5 Auto-Start Plugin (Embedded Mode)
+
+The `bridge/plugin/dcc_mcp_zbrush/__init__.py` package auto-starts `dcc_mcp_zbrush.start_server(mode="embedded")` when ZBrush loads the plugin directory. Controlled by `DCC_MCP_ZBRUSH_AUTOSTART` (default: on).
+
+---
+
+## 7. Skill Catalog
+
+### 7.1 Bundled Skills
+
+The adapter ships with these built-in skills in `src/dcc_mcp_zbrush/skills/`:
+
+#### `zbrush-scripting` (bootstrap stage, loaded by default)
 | Tool | Description |
 |------|-------------|
-| `list_tools` | List all ZTools in ZBrush |
-| `get_active_tool` | Get active ZTool name, polygon count, SubTool count |
-| `execute_zscript` | Execute arbitrary ZScript code |
-| `export_mesh` | Export active ZTool to OBJ/FBX/ZTL/STL |
+| `execute_python` | Execute arbitrary Python code in ZBrush VM (escape hatch) |
+| `get_session_info` | ZBrush version, active tool path, subtool count |
 
-### 5.2 Phase 2 (v0.3.0) — SubTools & Layers
-
-#### `zbrush-subtool`
+#### `zbrush-scene` (scene stage, loaded by default)
 | Tool | Description |
 |------|-------------|
-| `list_subtools` | List all SubTools with visibility/polygon info |
-| `set_active_subtool` | Switch active SubTool |
-| `toggle_visibility` | Show/hide SubTool |
-| `merge_visible` | Merge all visible SubTools |
-| `duplicate_subtool` | Duplicate a SubTool |
+| `get_scene_info` | Active tool path, subtool count, active subtool index |
+| `list_subtools` | All SubTools with visibility/lock flags |
+
+#### `zbrush-subtool` (authoring stage, not loaded by default)
+| Tool | Description |
+|------|-------------|
+| `select_subtool` | Switch active SubTool |
+| `get_subtool_status` | Status for one SubTool |
+| `rename_subtool` | Rename a SubTool |
+| `reorder_subtool` | Reorder subtools |
 | `delete_subtool` | Delete a SubTool |
+| `duplicate_subtool` | Duplicate a SubTool |
+| `merge_subtools` | Merge visible SubTools |
+| `toggle_subtool_visibility` | Show/hide a SubTool |
+| `toggle_subtool_lock` | Lock/unlock a SubTool |
 
-#### `zbrush-morph`
+#### `zbrush-interchange` (interchange stage, not loaded by default)
 | Tool | Description |
 |------|-------------|
-| `store_morph` | Store current mesh as morph target |
-| `switch_morph` | Switch between mesh and morph target |
-| `bake_morph` | Bake morph difference |
-| `list_layers` | List ZBrush layer stack |
+| `export_active_subtool_obj` | Export active SubTool as OBJ file |
 
-### 5.3 Phase 3 (v0.4.0) — Render & Export
+### 7.2 Skill Loading Stages
 
-#### `zbrush-render`
-| Tool | Description |
-|------|-------------|
-| `bpr_render` | Trigger BPR render |
-| `export_render` | Export render passes |
-| `set_render_settings` | Configure BPR settings |
+| Stage | Skills | Default | Trigger |
+|-------|--------|---------|---------|
+| `bootstrap` | `zbrush-scripting` | Yes | Server start |
+| `scene` | `zbrush-scene` | Yes | Server start |
+| `authoring` | `zbrush-subtool` | No | `load_skill("zbrush-subtool")` |
+| `interchange` | `zbrush-interchange` | No | `load_skill("zbrush-interchange")` |
+
+Minimal mode (`DCC_MCP_MINIMAL=1`) loads only bootstrap + scene at startup. Additional skills are loaded on demand via `server.load_skill("zbrush-*")`.
+
+### 7.3 Common Agent Chains
+
+| Task | Chain |
+|------|-------|
+| Verify MCP session | `zbrush_scripting__get_session_info` |
+| Inspect active tool | `zbrush_scene__get_scene_info` → `zbrush_scene__list_subtools` |
+| Switch subtool | `load_skill("zbrush-subtool")` → `zbrush_subtool__select_subtool` |
+| Export to OBJ | `zbrush_subtool__select_subtool` → `load_skill("zbrush-interchange")` → `zbrush_interchange__export_active_subtool_obj` |
+| Escape hatch | `load_skill("zbrush-scripting")` → `zbrush_scripting__execute_python` |
+
+### 7.4 Agent-Automatable vs Human-Required Steps
+
+| Step | Agent | Human |
+|------|-------|-------|
+| Install dcc-mcp-zbrush Python package | ✓ | |
+| Set `PYTHONPATH` / `ZBRUSH_PLUGIN_PATH` | | ✓ (needs ZBrush restart) |
+| Drop `mcp_socket_bridge.py` into ZPlugs64 | | ✓ (needs file system access) |
+| Launch ZBrush | | ✓ |
+| Verify MCP endpoint is reachable | ✓ | |
+| Load a skill | ✓ | |
+| Call a tool | ✓ | |
+| Interpret errors from `zbrush.commands` | ✓ | |
+| Restart ZBrush after plugin update | | ✓ |
 
 ---
 
-## 6. Non-Functional Requirements
+## 8. Non-Functional Requirements
 
 | Requirement | Target |
 |-------------|--------|
-| HTTP timeout | 30s default, configurable |
-| Connection retry | 3 attempts with exponential backoff |
-| Startup time | < 2s for server init (bridge connect async) |
-| Python version | 3.8+ |
-| ZBrush version | 2024.0.1+ |
-| Dependencies | `dcc-mcp-core>=0.12.14`, `httpx>=0.25.0` |
+| MCP HTTP timeout | Configurable (default: from dcc-mcp-core) |
+| Socket bridge timeout | 120s default, configurable |
+| Connection retry | None (fail-fast on embedded; sidecar connect on start) |
+| Startup time | < 2s (embedded) or < 1s (sidecar) |
+| Python version | 3.9+ |
+| ZBrush version | 2026.1+ |
+| Dependencies | `dcc-mcp-core>=0.18.7,<1.0.0` |
+| Transport | MCP Streamable HTTP (2025-03-26) |
+| Sidecar transport | TCP JSON-RPC 2.0 (newline-delimited) |
 
 ---
 
-## 7. Error Handling
+## 9. Error Handling
 
-### Bridge Connection Errors
-- ZBrush not running → `ZBrushNotAvailableError` → graceful start (warn, don't crash)
-- ZBrush HTTP server disabled → same as above
-- API key mismatch → 401 response → `ZBrushBridgeError` with clear message
+### Embedded Mode
+- ZBrush SDK unavailable → `ZBrushNotAvailableError` → skill returns `zb_error()` with prompt to start ZBrush or switch to sidecar mode
+- `zbrush.commands` API failure → caught by `@with_zbrush` decorator → `zb_from_exception()`
+- SubTool index out of range → structured error with valid range
 
-### Skill Execution Errors
+### Sidecar Mode
+- Plugin not running → `ZBrushNotAvailableError` on connect → logged warning, skills return `zb_error()`
+- TCP connection lost → `ZBrushBridgeError` → skills return `zb_error()` with reconnection prompt
+- Unknown RPC method → JSON-RPC error code `-32601`
+- Python execution error in ZBrush VM → stack trace in error data
+
+### General
 - `@with_zbrush` decorator catches all bridge/NotImplementedError/Exception
 - Returns structured `zb_error()` dict (never throws to MCP layer)
+- Server startup tolerates missing bridge (sidecar connect is async-best-effort)
 
 ---
 
-## 8. Testing Strategy
+## 10. Testing Strategy
 
 ### Unit Tests (no ZBrush required)
-- Mock `httpx.Client` with `respx` for HTTP response simulation
-- Test `ZBrushBridge.execute_zscript`, `list_tools`, `export_mesh`
+- Mock `zbrush.commands` with `unittest.mock` for embedded mode
+- Mock `socket` for sidecar bridge `SocketBridge.call()`
 - Test all `zb_success`/`zb_error`/`with_zbrush` helpers
+- Test mode auto-detection logic
 
-### Integration Tests (requires ZBrush)
+### Integration Tests (requires ZBrush 2026.1+)
 - Marked `@pytest.mark.e2e`
-- Run only in ZBrush CI environment
-- Verify real ZScript execution
+- Run inside ZBrush's embedded Python or against a running socket plugin
+- Verify real `zbrush.commands` API calls
 
 ---
 
-## 9. Versioning & Release
+## 11. Versioning & Release
 
 Follows the same `release-please` workflow as `dcc-mcp-core` and `dcc-mcp-maya`.
 
 | Version | Milestone |
 |---------|-----------|
-| 0.1.0 | Placeholder skeleton (current) |
-| 0.2.0 | Working HTTP bridge + core sculpt skills |
-| 0.3.0 | SubTool + morph layer management |
-| 0.4.0 | Render + export pipeline |
-| 1.0.0 | Stable API + full CI |
+| 0.1.x | Placeholder skeleton |
+| 0.2.x | Embedded SDK integration + bundled skills (current) |
+| 0.3.x | Full subtool management + interchange (OBJ/FBX export) |
+| 0.4.x | Advanced scene query + render pipeline |
+| 1.0.0 | Stable API + full CI + docs |
 
 ---
 
-## 10. Open Questions
+## 12. Open Questions
 
-1. **ZBrush HTTP API documentation**: Is the API fully documented or reverse-engineered?
-   → Need to validate endpoint names against actual ZBrush 2024 install.
-
-2. **ZScript vs HTTP**: Some operations may only be possible via ZScript macros.
-   → `execute_zscript` is the escape hatch for unsupported operations.
-
-3. **ZBrush 2023 compatibility**: Does ZBrush 2023 have an HTTP server?
-   → If yes, consider a fallback to GoZ TCP protocol.
-
-4. **Concurrent requests**: Does the ZBrush HTTP server handle concurrent requests?
-   → Add a request queue if single-threaded.
+1. **FBX export**: Does `zbrush.commands` expose FBX export, or is a separate script needed? → Currently only OBJ export via `Tool:Export` button press.
+2. **Concurrent access**: ZBrush's Python VM is single-threaded for scene operations. Does the MCP server need a request queue? → Sidecar mode uses threading; embedded mode is synchronous. Add serialization if contention arises.
+3. **ZBrush version probing**: `zbrush_info()` returns `(major, minor)`. Need to validate the exact version string format in 2026.1+ SDK releases.

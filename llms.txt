@@ -1,0 +1,108 @@
+# dcc-mcp-zbrush
+
+> Agent entry point. Read `AGENTS.md` for full navigation map.
+
+## Supported modes
+
+|Mode|When to use|Stack|
+|---|---|---|
+|**Embedded (recommended)**|ZBrush 2026.1+ with Python SDK|Python plugin inside ZBrush → dcc-mcp-core MCP HTTP server → zbrush.commands|
+|**Sidecar + socket plugin**|External MCP process / restricted installs|External Python → TCP :9876 → bridge/plugin/mcp_socket_bridge.py inside ZBrush|
+
+## Distribution artifacts
+
+There are three independent distribution channels. Each covers a different scope:
+
+|Artifact|Scope|Install command|
+|---|---|---|
+|**PyPI wheel** (`dcc-mcp-zbrush`)|Python package (src/dcc_mcp_zbrush/) — MCP server, skills, bridge client|`pip install dcc-mcp-zbrush`|
+|**Plugin ZIP**|ZBrush plugin files — auto-start package, socket bridge, install scripts|`Download from latest release and run install-windows.ps1 or install-macos.sh`|
+|**Repo source**|Everything above + bridge/plugin/ raw sources + tests + tools|`git clone https://github.com/loonghao/dcc-mcp-zbrush.git`|
+
+The wheel does not bundle bridge/plugin/ — that directory is only in the plugin ZIP or the repo checkout.
+
+## Install steps (embedded)
+
+### New install (PyPI + plugin ZIP)
+
+1. pip install dcc-mcp-zbrush
+2. Download plugin ZIP from GitHub Releases and run installer
+3. Restart ZBrush
+
+### From source checkout
+
+1. pip install -e ".[dev]"
+2. Copy bridge/plugin/dcc_mcp_zbrush to ZStartup/ZPlugs64
+3. Restart ZBrush
+
+MCP endpoint: `http://127.0.0.1:8765/mcp`
+
+## MCP config snippets
+
+### Cursor / Claude Desktop (direct)
+
+```json
+{
+  "mcpServers": {
+    "dcc-mcp-zbrush": {
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}
+```
+
+### With gateway (multi-DCC)
+
+```json
+{
+  "mcpServers": {
+    "dcc-mcp-zbrush": {
+      "url": "http://127.0.0.1:9765/mcp"
+    }
+  }
+}
+```
+
+## Environment variables
+
+|Variable|Default|Purpose|
+|---|---|---|
+|DCC_MCP_ZBRUSH_PORT|`8765`|MCP HTTP port|
+|DCC_MCP_ZBRUSH_MODE|`auto`|embedded or sidecar|
+|DCC_MCP_ZBRUSH_AUTOSTART|`1`|Auto-start embedded server from plugin|
+|DCC_MCP_ZBRUSH_SOCKET_PORT|`9876`|Socket bridge port (sidecar)|
+|DCC_MCP_GATEWAY_PORT|`9765`|Gateway election port|
+|DCC_MCP_MINIMAL|`1`|Progressive skill loading|
+
+## Bundled skills
+
+|Skill|Tools|
+|---|---|
+|zbrush-scripting|execute_python, get_session_info|
+|zbrush-scene|get_scene_info, list_subtools|
+|zbrush-subtool|—|
+|zbrush-interchange|—|
+
+## Health check
+
+```bash
+curl http://127.0.0.1:8765/mcp
+```
+
+```bash
+call_tool("get_session_info")  # reads version + active tool + subtool count
+```
+
+```bash
+SocketBridge.connect()  # sends JSON-RPC ping → expects {"ok": true}
+```
+
+## Common failure modes
+
+|Problem|Likely cause|Fix|
+|---|---|---|
+|Connection refused|ZBrush not running|Start ZBrush|
+|MCP endpoint unreachable|Wrong mode or port|Set DCC_MCP_ZBRUSH_MODE=embedded; check port 8765|
+|ZBrushNotAvailableError|Socket bridge plugin not installed|Copy mcp_socket_bridge.py to ZStartup|
+|subprocess fails|ZBrush Python VM does not support subprocess|Use execute_python skill instead|
+|ZBrush version < 2026.1|No Python SDK available|Upgrade to ZBrush 2026.1+|
