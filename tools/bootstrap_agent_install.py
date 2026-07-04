@@ -51,7 +51,7 @@ from typing import Optional, Tuple
 # Constants
 # ---------------------------------------------------------------------------
 
-GITHUB_REPO = "loonghao/dcc-mcp-zbrush"
+GITHUB_REPO = "dcc-mcp/dcc-mcp-zbrush"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 RELEASES_URL = f"{GITHUB_API}/releases"
 MCP_PORT = 8765
@@ -555,8 +555,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Resolve version
     version = args.version or _get_latest_version()
     if version == "0.0.0":
-        print("✗ Could not determine latest version and --version not specified", file=sys.stderr)
-        return 1
+        if args.dry_run:
+            version = "0.0.0-dry-run"
+            print(
+                "⚠ Could not determine latest version from GitHub API "
+                "(rate limit or network issue); using placeholder for dry-run.",
+                file=sys.stderr,
+            )
+        else:
+            print("✗ Could not determine latest version and --version not specified", file=sys.stderr)
+            return 1
 
     print("dcc-mcp-zbrush bootstrap installer")
     print(f"  Mode:     {args.mode}")
