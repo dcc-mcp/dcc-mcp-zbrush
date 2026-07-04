@@ -334,7 +334,7 @@ class TestBootstrapConstants:
 
     def test_github_repo_correct(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
-        assert "loonghao/dcc-mcp-zbrush" in mod.GITHUB_REPO
+        assert "dcc-mcp/dcc-mcp-zbrush" in mod.GITHUB_REPO
 
     def test_mcp_config_template_has_correct_url(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
