@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.12](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.11...v0.2.12) (2026-07-05)
+
+
+### Features
+
+* embedded ZBrush adapter, skills, CI, and installable plugin package ([5d196a0](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/5d196a08fed5f96aa95a289247162526e77f6468))
+* initial placeholder for dcc-mcp-zbrush ([8e89623](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/8e89623f4ac73bcc1ce2c7edb54d40f41c7ed1ed))
+
+
+### Bug Fixes
+
+* **bootstrap:** handle GitHub API rate limit in dry-run mode ([04e4ac9](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/04e4ac9bb31baaa959f44ea73648253acb5aeab0))
+* recover main from v0.2.11 ([f071449](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/f0714496bd840ac56e838f0803f41b10d9db726e))
+* **test:** update GITHUB_REPO assertion to match canonical org repo ([cde75d6](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/cde75d6698b1ac9dc21b1f7c105590221b311d97))
+
 ## [0.2.11](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.10...v0.2.11) (2026-06-23)
 
 
