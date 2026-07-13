@@ -278,6 +278,19 @@ class TestPluginExtraction:
 class TestDryRun:
     """Dry-run mode tests — verify no side effects."""
 
+    def test_dry_run_uses_placeholder_when_plugin_path_is_unknown(self) -> None:
+        mod = _load_tool_module("bootstrap_agent_install.py")
+        with patch.dict(os.environ, {"ZBRUSH_USER_ASSETS_DIR": "", "ZBRUSH_PLUGIN_PATH": ""}):
+            result = mod._resolve_plugin_dir(None, dry_run=True)
+
+        assert result == Path("<ZBRUSH_PLUGIN_PATH>")
+
+    def test_real_install_still_requires_discoverable_plugin_path(self) -> None:
+        mod = _load_tool_module("bootstrap_agent_install.py")
+        with patch.dict(os.environ, {"ZBRUSH_USER_ASSETS_DIR": "", "ZBRUSH_PLUGIN_PATH": ""}):
+            with pytest.raises(RuntimeError, match="ZBRUSH_USER_ASSETS_DIR"):
+                mod._resolve_plugin_dir(None, dry_run=False)
+
     def test_dry_run_wheel_no_pip_call(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         with patch("subprocess.check_call") as mock_check_call:

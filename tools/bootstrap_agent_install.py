@@ -101,6 +101,18 @@ def _get_zbrush_plugin_dir() -> Path:
     )
 
 
+def _resolve_plugin_dir(configured: Optional[Path], dry_run: bool) -> Path:
+    """Resolve the scan root while keeping host-free previews portable."""
+    if configured is not None:
+        return configured
+    try:
+        return _get_zbrush_plugin_dir()
+    except RuntimeError:
+        if not dry_run:
+            raise
+        return Path("<ZBRUSH_PLUGIN_PATH>")
+
+
 def _get_cursor_config_path() -> Path:
     """Return the Cursor MCP config path for the current platform."""
     system = platform.system()
@@ -578,7 +590,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("  Dry run:  YES (no changes will be made)")
     print()
 
-    plugin_dir = args.plugin_dir or _get_zbrush_plugin_dir()
+    plugin_dir = _resolve_plugin_dir(args.plugin_dir, args.dry_run)
 
     # Step 1: Install wheel
     if not args.skip_wheel:
