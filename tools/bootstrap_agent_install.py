@@ -25,7 +25,7 @@ Steps (each skippable via --skip-*)::
 
     1. pip install dcc-mcp-zbrush==<version>
     2. Download plugin ZIP from GitHub Releases + SHA256 verify
-    3. Extract to ZStartup/ZPlugs64 (mode-aware: embedded → plugin dir, sidecar → socket bridge)
+    3. Install at the ZBrush Python plugin scan root (mode-aware)
     4. Write MCP config (Cursor / Claude Desktop)
     5. Print health check instructions
 """
@@ -80,20 +80,37 @@ MCP_CONFIG_GATEWAY_TEMPLATE = {
 
 
 def _get_zbrush_plugin_dir() -> Path:
-    """Return the default ZBrush plugin directory for the current platform.
+    """Return a plugin scan root explicitly exported by the ZBrush launcher.
 
-    Returns:
-        Path to ``ZStartup/ZPlugs64`` under the ZBrush user data directory.
+    Guessing the legacy ``ZPlugs64`` path can report a successful install that
+    ZBrush 2026.1+ never loads, so fail closed when no scan root is available.
     """
-    system = platform.system()
-    if system == "Windows":
-        base = Path(os.environ.get("USERPROFILE", str(Path.home())))
-        return base / "Documents" / "ZBrushData" / "ZStartup" / "ZPlugs64"
-    elif system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "ZBrush" / "ZStartup" / "ZPlugs64"
-    else:
-        # Linux — not officially supported, but provide a reasonable guess
-        return Path.home() / ".local" / "share" / "ZBrush" / "ZStartup" / "ZPlugs64"
+    asset_dir = os.environ.get("ZBRUSH_USER_ASSETS_DIR", "").strip()
+    if asset_dir:
+        return Path(asset_dir)
+
+    plugin_paths = os.environ.get("ZBRUSH_PLUGIN_PATH", "").strip()
+    if plugin_paths:
+        first_path = next((item.strip() for item in plugin_paths.split(os.pathsep) if item.strip()), "")
+        if first_path:
+            return Path(first_path)
+
+    raise RuntimeError(
+        "ZBrush plugin path is unknown; launch from an environment exporting "
+        "ZBRUSH_USER_ASSETS_DIR/ZBRUSH_PLUGIN_PATH or pass --plugin-dir"
+    )
+
+
+def _resolve_plugin_dir(configured: Optional[Path], dry_run: bool) -> Path:
+    """Resolve the scan root while keeping host-free previews portable."""
+    if configured is not None:
+        return configured
+    try:
+        return _get_zbrush_plugin_dir()
+    except RuntimeError:
+        if not dry_run:
+            raise
+        return Path("<ZBRUSH_PLUGIN_PATH>")
 
 
 def _get_cursor_config_path() -> Path:
@@ -316,7 +333,7 @@ def extract_plugin(
 
     Args:
         zip_path: Path to the downloaded plugin ZIP.
-        plugin_dir: Target ZStartup/ZPlugs64 directory.
+        plugin_dir: Target ZBrush Python plugin scan root.
         mode: ``embedded`` or ``sidecar``.
         dry_run: If True, preview only.
     """
@@ -345,13 +362,18 @@ def extract_plugin(
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         all_names = zf.namelist()
+        installed_names = []
         for name in all_names:
-            # In embedded mode, skip sidecar files; in sidecar mode, include both
-            if mode == "embedded" and name.startswith("sidecar/"):
+            relative_name = None
+            if mode == "embedded" and name.startswith("embedded/"):
+                relative_name = name.removeprefix("embedded/")
+            elif mode == "sidecar" and name == "sidecar/mcp_socket_bridge.py":
+                relative_name = "mcp_socket_bridge.py"
+            if not relative_name:
                 continue
 
             member = zf.getinfo(name)
-            target_path = plugin_dir / name
+            target_path = plugin_dir / relative_name
 
             if member.is_dir():
                 target_path.mkdir(parents=True, exist_ok=True)
@@ -362,15 +384,9 @@ def extract_plugin(
                 # Preserve executable bits from ZIP external_attr
                 if member.external_attr & (0o755 << 16):
                     target_path.chmod(target_path.stat().st_mode | 0o111)
+            installed_names.append(name)
 
-    # Count extracted files
-    extracted = 0
-    for name in all_names:
-        if mode == "embedded" and name.startswith("sidecar/"):
-            continue
-        member = zf.getinfo(name)
-        if not member.is_dir():
-            extracted += 1
+        extracted = sum(not zf.getinfo(name).is_dir() for name in installed_names)
 
     print(f"       ✓ Extracted {extracted} files to {plugin_dir}")
 
@@ -468,7 +484,7 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
         print()
         print("  3. Expected response: MCP endpoint info or SSE stream.")
     else:
-        print("  1. Ensure the socket bridge plugin is in ZPlugs64:")
+        print("  1. Ensure the socket bridge plugin is at the ZBrush plugin scan root:")
         print(f"     {plugin_dir / 'mcp_socket_bridge.py'}")
         print()
         print("  2. Start ZBrush (the socket bridge auto-starts and listens).")
@@ -484,7 +500,7 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
     print()
     print("  Troubleshooting:")
     print("  - Connection refused → ZBrush not running or port blocked")
-    print("  - Plugin not loading → check ZStartup/ZPlugs64 path above")
+    print("  - Plugin not loading → check the ZBrush Asset Directory/plugin scan root above")
     print("  - Port conflict → set DCC_MCP_ZBRUSH_PORT env var")
     print()
 
@@ -574,7 +590,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("  Dry run:  YES (no changes will be made)")
     print()
 
-    plugin_dir = args.plugin_dir or _get_zbrush_plugin_dir()
+    plugin_dir = _resolve_plugin_dir(args.plugin_dir, args.dry_run)
 
     # Step 1: Install wheel
     if not args.skip_wheel:

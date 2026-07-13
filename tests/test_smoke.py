@@ -49,29 +49,27 @@ class TestPlatformPaths:
     """Platform-specific path detection for ZBrush plugin and MCP config."""
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only path test")
-    def test_zbrush_plugin_dir_windows(self) -> None:
+    def test_zbrush_plugin_dir_uses_asset_directory(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         with patch.object(platform, "system", return_value="Windows"):
-            with patch.dict(os.environ, {"USERPROFILE": r"C:\Users\testuser"}):
+            with patch.dict(os.environ, {"ZBRUSH_USER_ASSETS_DIR": r"D:\ZBrushAssets"}):
                 result = mod._get_zbrush_plugin_dir()
-            assert result == Path(r"C:\Users\testuser\Documents\ZBrushData\ZStartup\ZPlugs64")
+            assert result == Path(r"D:\ZBrushAssets")
 
-    def test_zbrush_plugin_dir_macos(self) -> None:
+    def test_zbrush_plugin_dir_uses_first_configured_plugin_path(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
-        with patch.object(platform, "system", return_value="Darwin"):
-            with patch.object(Path, "home", return_value=Path("/Users/testuser")):
-                result = mod._get_zbrush_plugin_dir()
-            assert result == Path("/Users/testuser/Library/Application Support/ZBrush/ZStartup/ZPlugs64")
+        with patch.dict(
+            os.environ,
+            {"ZBRUSH_USER_ASSETS_DIR": "", "ZBRUSH_PLUGIN_PATH": os.pathsep.join(("/plugins/one", "/plugins/two"))},
+        ):
+            result = mod._get_zbrush_plugin_dir()
+        assert result == Path("/plugins/one")
 
-    def test_zbrush_plugin_dir_linux(self) -> None:
+    def test_zbrush_plugin_dir_requires_discoverable_path(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
-        with patch.object(platform, "system", return_value="Linux"):
-            with patch.object(Path, "home", return_value=Path("/home/testuser")):
-                result = mod._get_zbrush_plugin_dir()
-            # Check path parts, not string representation (cross-platform)
-            parts = result.parts
-            assert "ZStartup" in parts
-            assert "ZPlugs64" in parts
+        with patch.dict(os.environ, {"ZBRUSH_USER_ASSETS_DIR": "", "ZBRUSH_PLUGIN_PATH": ""}):
+            with pytest.raises(RuntimeError, match="ZBRUSH_USER_ASSETS_DIR"):
+                mod._get_zbrush_plugin_dir()
 
     def test_cursor_config_path_windows(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -223,6 +221,7 @@ class TestPluginExtraction:
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("embedded/dcc_mcp_zbrush/__init__.py", "# embedded plugin")
             zf.writestr("embedded/dcc_mcp_zbrush/core.py", "# core module")
+            zf.writestr("embedded/dcc_mcp_zbrush_plugin.py", "# autostart plugin")
             zf.writestr("sidecar/mcp_socket_bridge.py", "# socket bridge")
             zf.writestr("install/install-windows.ps1", "# windows installer")
             zf.writestr("install/install-macos.sh", "#!/bin/sh\necho ok")
@@ -232,34 +231,31 @@ class TestPluginExtraction:
     def test_embedded_mode_skips_sidecar_files(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         zip_path = self._make_test_zip(tmp_path)
-        target = tmp_path / "ZPlugs64"
+        target = tmp_path / "ZBrushAssets"
 
         mod.extract_plugin(zip_path, target, "embedded", dry_run=False)
 
         # Embedded files should exist
-        assert (target / "embedded" / "dcc_mcp_zbrush" / "__init__.py").exists()
-        assert (target / "embedded" / "dcc_mcp_zbrush" / "core.py").exists()
+        assert (target / "dcc_mcp_zbrush" / "__init__.py").exists()
+        assert (target / "dcc_mcp_zbrush" / "core.py").exists()
+        assert (target / "dcc_mcp_zbrush_plugin.py").exists()
         # Sidecar file should NOT exist (skipped in embedded mode)
-        assert not (target / "sidecar" / "mcp_socket_bridge.py").exists()
-        # Install files should exist
-        assert (target / "install" / "install-windows.ps1").exists()
-        assert (target / "README-INSTALL.txt").exists()
+        assert not (target / "mcp_socket_bridge.py").exists()
 
-    def test_sidecar_mode_includes_both(self, tmp_path: Path) -> None:
+    def test_sidecar_mode_installs_socket_bridge_at_scan_root(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         zip_path = self._make_test_zip(tmp_path)
-        target = tmp_path / "ZPlugs64"
+        target = tmp_path / "ZBrushAssets"
 
         mod.extract_plugin(zip_path, target, "sidecar", dry_run=False)
 
-        # Both embedded and sidecar should exist
-        assert (target / "embedded" / "dcc_mcp_zbrush" / "__init__.py").exists()
-        assert (target / "sidecar" / "mcp_socket_bridge.py").exists()
+        assert (target / "mcp_socket_bridge.py").exists()
+        assert not (target / "dcc_mcp_zbrush_plugin.py").exists()
 
     def test_extract_creates_target_directory(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         zip_path = self._make_test_zip(tmp_path)
-        target = tmp_path / "nonexistent" / "ZPlugs64"
+        target = tmp_path / "nonexistent" / "ZBrushAssets"
 
         mod.extract_plugin(zip_path, target, "embedded", dry_run=False)
         assert target.exists()
@@ -267,7 +263,7 @@ class TestPluginExtraction:
     def test_dry_run_extract_no_files_written(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         zip_path = self._make_test_zip(tmp_path)
-        target = tmp_path / "ZPlugs64"
+        target = tmp_path / "ZBrushAssets"
 
         # Ensure target does not exist before
         if target.exists():
@@ -281,6 +277,19 @@ class TestPluginExtraction:
 
 class TestDryRun:
     """Dry-run mode tests — verify no side effects."""
+
+    def test_dry_run_uses_placeholder_when_plugin_path_is_unknown(self) -> None:
+        mod = _load_tool_module("bootstrap_agent_install.py")
+        with patch.dict(os.environ, {"ZBRUSH_USER_ASSETS_DIR": "", "ZBRUSH_PLUGIN_PATH": ""}):
+            result = mod._resolve_plugin_dir(None, dry_run=True)
+
+        assert result == Path("<ZBRUSH_PLUGIN_PATH>")
+
+    def test_real_install_still_requires_discoverable_plugin_path(self) -> None:
+        mod = _load_tool_module("bootstrap_agent_install.py")
+        with patch.dict(os.environ, {"ZBRUSH_USER_ASSETS_DIR": "", "ZBRUSH_PLUGIN_PATH": ""}):
+            with pytest.raises(RuntimeError, match="ZBRUSH_USER_ASSETS_DIR"):
+                mod._resolve_plugin_dir(None, dry_run=False)
 
     def test_dry_run_wheel_no_pip_call(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -472,7 +481,7 @@ class TestPluginZipStructure:
 
         assert "sidecar/mcp_socket_bridge.py" in names
 
-    def test_pack_plugin_contains_init_py(self, tmp_path: Path) -> None:
+    def test_pack_plugin_contains_autostart_entry(self, tmp_path: Path) -> None:
         pack_path = _TOOLS_DIR / "pack_plugin.py"
         spec = importlib.util.spec_from_file_location("pack_plugin", pack_path)
         assert spec and spec.loader
@@ -483,8 +492,7 @@ class TestPluginZipStructure:
         with zipfile.ZipFile(output, "r") as zf:
             names = zf.namelist()
 
-        init_files = [n for n in names if n.endswith("__init__.py")]
-        assert len(init_files) >= 1, f"No __init__.py found in {names}"
+        assert "embedded/dcc_mcp_zbrush_plugin.py" in names
 
     def test_pack_plugin_contains_install_scripts(self, tmp_path: Path) -> None:
         pack_path = _TOOLS_DIR / "pack_plugin.py"

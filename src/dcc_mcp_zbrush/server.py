@@ -169,8 +169,7 @@ class ZBrushMcpServer(DccServerBase):
         if minimal_mode is None and _env.resolve_minimal_mode_enabled():
             minimal_mode = build_minimal_mode_config()
 
-        if self._mode == "embedded":
-            _executor.attach_inprocess_executor(self)
+        _executor.attach_inprocess_executor(self)
 
         super().register_builtin_actions(
             extra_skill_paths=extra_skill_paths,

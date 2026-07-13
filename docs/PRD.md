@@ -91,7 +91,7 @@ Auto-detection logic (`_env.resolve_mode`): try `embedded` first; if `zbrush.com
 ┌────────────────────────────▼──────────────────────────────────┐
 │  ZBrush 2026.1+  (process)                                    │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  mcp_socket_bridge.py  (ZStartup/ZPlugs64 plugin)       │  │
+│  │  mcp_socket_bridge.py  (Asset/plugin scan root)         │  │
 │  │  ├── TCP server on 127.0.0.1:9876                       │  │
 │  │  └── calls zbrush.commands for each RPC method          │  │
 │  └─────────────────────────────────────────────────────────┘  │
@@ -266,7 +266,7 @@ The wheel (`pyproject.toml:46-47`) only packages `src/dcc_mcp_zbrush`. The `brid
 
 ### 6.4 Plugin Installation
 
-Copy `bridge/plugin/mcp_socket_bridge.py` into `ZStartup/ZPlugs64` or expose via `ZBRUSH_PLUGIN_PATH`, then **restart ZBrush**. The plugin auto-starts the TCP listener on next ZBrush launch.
+Copy `bridge/plugin/mcp_socket_bridge.py` directly into the ZBrush Asset Directory or a `ZBRUSH_PLUGIN_PATH` root, then **restart ZBrush**. The plugin auto-starts the TCP listener on next ZBrush launch.
 
 ### 6.5 Auto-Start Plugin (Embedded Mode)
 
@@ -337,7 +337,7 @@ Minimal mode (`DCC_MCP_MINIMAL=1`) loads only bootstrap + scene at startup. Addi
 |------|-------|-------|
 | Install dcc-mcp-zbrush Python package | ✓ | |
 | Set `PYTHONPATH` / `ZBRUSH_PLUGIN_PATH` | | ✓ (needs ZBrush restart) |
-| Drop `mcp_socket_bridge.py` into ZPlugs64 | | ✓ (needs file system access) |
+| Drop `mcp_socket_bridge.py` into the Asset/plugin scan root | | ✓ (needs file system access) |
 | Launch ZBrush | | ✓ |
 | Verify MCP endpoint is reachable | ✓ | |
 | Load a skill | ✓ | |

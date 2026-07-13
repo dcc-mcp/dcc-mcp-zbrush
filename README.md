@@ -39,7 +39,7 @@ Then run the install script inside the ZIP:
 chmod +x install/install-macos.sh && ./install/install-macos.sh
 ```
 
-This copies the plugin into your ZBrush `ZStartup/ZPlugs64` directory so it loads automatically on startup.
+The installer resolves the ZBrush Asset Directory or `ZBRUSH_PLUGIN_PATH` and places the selected entry script directly at that scan root. It fails instead of reporting success when no valid scan root is available; pass `-Target` explicitly in that case.
 
 ### 3. Restart ZBrush
 
@@ -132,7 +132,7 @@ AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
 ## Path concepts
 
 - **PYTHONPATH** — where Python looks for packages (`pip install` handles this)
-- **ZBRUSH_PLUGIN_PATH** / **ZStartup/ZPlugs64** — where ZBrush loads auto-start plugins
+- **ZBRUSH_USER_ASSETS_DIR** / **ZBRUSH_PLUGIN_PATH** — plugin scan roots used by ZBrush 2026.1+
 
 `pip install dcc-mcp-zbrush` puts the Python package on `PYTHONPATH`.  
 The plugin ZIP goes into `ZBRUSH_PLUGIN_PATH` (handled by the install scripts above).
@@ -157,7 +157,7 @@ def my_tool(**kwargs) -> dict:
 
 If you cannot install the embedded plugin or need the MCP server to run outside ZBrush:
 
-1. The plugin ZIP already includes `sidecar/mcp_socket_bridge.py` — copy it to `ZPlugs64` (the install scripts handle this).
+1. The plugin ZIP includes `sidecar/mcp_socket_bridge.py`; install it directly at the Asset Directory/plugin scan root (`install-windows.ps1 -Mode sidecar`).
 2. Start ZBrush.
 3. Run the MCP server outside ZBrush:
 
