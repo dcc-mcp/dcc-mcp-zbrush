@@ -13,7 +13,7 @@ tools:
       destructive_hint: false
       read_only_hint: false
       idempotent_hint: false
-    inputSchema:
+    input_schema:
       type: object
       required: [asset_id, variants]
       properties:
