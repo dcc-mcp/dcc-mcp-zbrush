@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.16](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.15...v0.2.16) (2026-07-13)
+
+
+### Bug Fixes
+
+* keep ZBrush UI responsive ([#43](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/43)) ([1c49dd8](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/1c49dd846f7ff66efc135c3619a78fe400dc6cd9))
+
 ## [0.2.15](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.14...v0.2.15) (2026-07-13)
 
 
