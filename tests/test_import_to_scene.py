@@ -40,6 +40,14 @@ def test_tools_yaml_contract() -> None:
         assert (tools_path.parent / tool["source_file"]).is_file()
 
 
+def test_tools_yaml_exposes_asset_descriptor_schema() -> None:
+    tools_path = _SKILLS_ROOT / _SKILL_DIR / "tools.yaml"
+    tool = yaml.safe_load(tools_path.read_text(encoding="utf-8"))["tools"][0]
+
+    assert "inputSchema" not in tool
+    assert tool["input_schema"]["required"] == ["asset_id", "variants"]
+
+
 def test_skill_in_index() -> None:
     index = _SKILLS_ROOT / "SKILLS_INDEX.md"
     text = index.read_text(encoding="utf-8")
