@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.14](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.13...v0.2.14) (2026-07-13)
+
+
+### Bug Fixes
+
+* publish ZBrush import schema ([#39](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/39)) ([2a35b3e](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/2a35b3e9e56a669194754a29cd77e0766ad6f951))
+
 ## [0.2.13](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.12...v0.2.13) (2026-07-13)
 
 
