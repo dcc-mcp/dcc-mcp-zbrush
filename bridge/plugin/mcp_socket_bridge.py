@@ -14,6 +14,8 @@ import threading
 import traceback
 from typing import Any, Dict, Optional
 
+_ZBRUSH_REQUEST_LOCK = threading.Lock()
+
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default)).strip()
@@ -28,10 +30,16 @@ def _handle_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     params = payload.get("params") or {}
     req_id = payload.get("id", 0)
 
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": req_id, "result": {"ok": True}}
+
+    with _ZBRUSH_REQUEST_LOCK:
+        return _handle_zbrush_request(method, params, req_id)
+
+
+def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> Dict[str, Any]:
     try:
-        if method == "ping":
-            result = {"ok": True}
-        elif method == "get_session_info":
+        if method == "get_session_info":
             result = _get_session_info()
         elif method == "get_scene_info":
             result = _get_scene_info()

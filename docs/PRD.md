@@ -415,5 +415,5 @@ Follows the same `release-please` workflow as `dcc-mcp-core` and `dcc-mcp-maya`.
 ## 12. Open Questions
 
 1. **FBX export**: Does `zbrush.commands` expose FBX export, or is a separate script needed? → Currently only OBJ export via `Tool:Export` button press.
-2. **Concurrent access**: ZBrush's Python VM is single-threaded for scene operations. Does the MCP server need a request queue? → Sidecar mode uses threading; embedded mode is synchronous. Add serialization if contention arises.
+2. **Concurrent access**: ZBrush's Python VM is single-threaded for scene operations. Sidecar connections may use separate threads, but bridge requests that touch the SDK are serialized.
 3. **ZBrush version probing**: `zbrush_info()` returns `(major, minor)`. Need to validate the exact version string format in 2026.1+ SDK releases.
