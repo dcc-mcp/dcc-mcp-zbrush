@@ -39,11 +39,17 @@ Then run the install script inside the ZIP:
 chmod +x install/install-macos.sh && ./install/install-macos.sh
 ```
 
-The installer resolves the ZBrush Asset Directory or `ZBRUSH_PLUGIN_PATH` and places the selected entry script directly at that scan root. It fails instead of reporting success when no valid scan root is available; pass `-Target` explicitly in that case.
+The installer resolves the ZBrush Asset Directory and installs the recommended
+sidecar bridge as `Python/init.py`. It fails instead of reporting success when
+no valid Asset Directory is available; pass `-Target` explicitly in that case.
 
 ### 3. Restart ZBrush
 
-Launch or restart ZBrush. The plugin auto-starts the MCP server in embedded mode.
+Launch or restart ZBrush, then start the external MCP sidecar:
+
+```bash
+dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
+```
 
 ### 4. Health check
 
@@ -77,19 +83,19 @@ The supported integration paths are:
 
 | Mode | When to use | Stack |
 |------|-------------|-------|
-| **Embedded** | Inside ZBrush 2026.1+ (plugin auto-start) | Python plugin inside ZBrush → `dcc-mcp-core` MCP HTTP server → `zbrush.commands` |
-| **Sidecar + socket plugin** (CLI default) | External MCP process / restricted installs | External Python → TCP :9876 → `bridge/plugin/mcp_socket_bridge.py` inside ZBrush |
+| **Sidecar + socket plugin** (recommended) | Production GUI and CI clients | External Python → TCP :9876 → main-thread bridge inside ZBrush |
+| **Embedded** (advanced) | Pure-Python experiments only | Python plugin inside ZBrush → `zbrush.commands` |
 
-Rust is **not** used inside ZBrush. Like Maya/Houdini, Rust lives in the **`dcc-mcp-core` wheel** (PyO3) that powers the MCP HTTP server. The ZBrush-facing code is **Python only**.
+Rust is **not** loaded inside ZBrush. The **`dcc-mcp-core` wheel** (PyO3) runs
+in the external sidecar process; importing its extension module into the ZBrush
+2026 embedded VM is not a supported runtime path. The ZBrush-facing bridge is
+Python only and executes requests serially on the host main thread while
+pumping UI updates.
 
 GoZ C++ SDK is for **mesh exchange between DCC apps**, not general MCP automation — we do not build the primary adapter on GoZ.
 
 ```
-Embedded mode (default inside ZBrush):
-
-AI Agent → MCP HTTP :8765 → ZBrushMcpServer (inside ZBrush) → zbrush.commands
-
-Sidecar mode:
+Recommended sidecar mode:
 
 AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
          → TCP :9876 → mcp_socket_bridge.py (inside ZBrush) → zbrush.commands
@@ -153,11 +159,10 @@ def my_tool(**kwargs) -> dict:
     return zb_success(f"{count} subtool(s)", count=count)
 ```
 
-## Sidecar mode (optional)
+## Sidecar mode
 
-If you cannot install the embedded plugin or need the MCP server to run outside ZBrush:
-
-1. The plugin ZIP includes `sidecar/mcp_socket_bridge.py`; install it directly at the Asset Directory/plugin scan root (`install-windows.ps1 -Mode sidecar`).
+1. The plugin ZIP includes `sidecar/mcp_socket_bridge.py`; install it as
+   `<Asset Directory>/Python/init.py` (`install-windows.ps1 -Mode sidecar`).
 2. Start ZBrush.
 3. Run the MCP server outside ZBrush:
 

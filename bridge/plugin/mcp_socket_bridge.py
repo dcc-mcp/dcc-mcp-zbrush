@@ -15,6 +15,8 @@ import traceback
 from typing import Any, Dict, Optional
 
 _ZBRUSH_REQUEST_LOCK = threading.Lock()
+_UI_POLL_SECONDS = 0.02
+_CLIENT_READ_SECONDS = 1.0
 
 
 def _env_int(name: str, default: int) -> int:
@@ -231,6 +233,7 @@ def _execute_python(code: str, context: Dict[str, Any]) -> Dict[str, Any]:
 
 def _serve_client(conn: socket.socket) -> None:
     with conn:
+        conn.settimeout(_CLIENT_READ_SECONDS)
         data = b""
         while b"\n" not in data:
             chunk = conn.recv(65536)
@@ -244,17 +247,44 @@ def _serve_client(conn: socket.socket) -> None:
 
 
 def _serve_forever(host: str, port: int) -> None:
+    """Serve requests on ZBrush's main Python thread while pumping its UI."""
+    zbc = _import_zbc()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
         server.listen(5)
+        server.settimeout(_UI_POLL_SECONDS)
         print(f"[dcc-mcp-zbrush] socket bridge listening on {host}:{port}")
         while True:
-            conn, _addr = server.accept()
-            threading.Thread(target=_serve_client, args=(conn,), daemon=True).start()
+            try:
+                conn, _addr = server.accept()
+            except socket.timeout:
+                conn = None
+            if conn is not None:
+                try:
+                    _serve_client(conn)
+                except Exception:
+                    print("[dcc-mcp-zbrush] rejected socket client")
+                    traceback.print_exc()
+            zbc.update(redraw_ui=True)
 
 
-if __name__ == "__main__":
+def _running_in_zbrush() -> bool:
+    try:
+        import zbrush.commands  # noqa: F401, PLC0415
+    except ImportError:
+        return False
+    return True
+
+
+def bootstrap_bridge() -> Optional[bool]:
+    """Run the main-thread bridge when executed by ZBrush's plugin scan."""
+    if __name__ != "__main__" and not _running_in_zbrush():
+        return None
     host = os.environ.get("DCC_MCP_ZBRUSH_SOCKET_HOST", "127.0.0.1")
     port = _env_int("DCC_MCP_ZBRUSH_SOCKET_PORT", 9876)
     _serve_forever(host, port)
+    return True
+
+
+_BRIDGE_BOOTSTRAP = bootstrap_bridge()
