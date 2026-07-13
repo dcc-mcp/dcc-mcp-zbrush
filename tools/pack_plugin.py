@@ -55,16 +55,16 @@ def _install_readme(version: str) -> str:
 
         Requires ZBrush 2026.1+ with the Python SDK and ``pip install dcc-mcp-zbrush``.
 
-        Embedded mode (recommended)
-        ---------------------------
+        Embedded mode (advanced)
+        ------------------------
         1. Copy ``embedded/dcc_mcp_zbrush`` and ``embedded/dcc_mcp_zbrush_plugin.py``
            directly into the ZBrush Asset Directory or a ``ZBRUSH_PLUGIN_PATH`` root.
         2. Ensure ``dcc-mcp-zbrush`` is on ZBrush ``PYTHONPATH``.
         3. Restart ZBrush. MCP endpoint: http://127.0.0.1:8765/mcp
 
-        Sidecar socket bridge (optional)
-        --------------------------------
-        1. Copy ``sidecar/mcp_socket_bridge.py`` directly into the same plugin scan root.
+        Sidecar socket bridge (recommended)
+        -----------------------------------
+        1. Copy ``sidecar/mcp_socket_bridge.py`` to ``<Asset Directory>/Python/init.py``.
         2. Run ``dcc-mcp-zbrush --mode sidecar`` outside ZBrush.
 
         Helper scripts in ``install/`` automate the copy step on Windows/macOS.
@@ -76,7 +76,7 @@ def _write_install_scripts(zf: zipfile.ZipFile) -> int:
     windows = textwrap.dedent(
         """\
         param(
-          [ValidateSet("embedded", "sidecar")][string]$Mode = "embedded",
+          [ValidateSet("embedded", "sidecar")][string]$Mode = "sidecar",
           [string]$Target = ""
         )
         $ErrorActionPreference = "Stop"
@@ -95,7 +95,9 @@ def _write_install_scripts(zf: zipfile.ZipFile) -> int:
           Copy-Item -Recurse -Force (Join-Path $root "..\\embedded\\dcc_mcp_zbrush") (Join-Path $Target "dcc_mcp_zbrush")
           Copy-Item -Force (Join-Path $root "..\\embedded\\dcc_mcp_zbrush_plugin.py") (Join-Path $Target "dcc_mcp_zbrush_plugin.py")
         } else {
-          Copy-Item -Force (Join-Path $root "..\\sidecar\\mcp_socket_bridge.py") (Join-Path $Target "mcp_socket_bridge.py")
+          $PythonTarget = Join-Path $Target "Python"
+          New-Item -ItemType Directory -Force -Path $PythonTarget | Out-Null
+          Copy-Item -Force (Join-Path $root "..\\sidecar\\mcp_socket_bridge.py") (Join-Path $PythonTarget "init.py")
         }
         Write-Host "Installed dcc-mcp-zbrush $Mode plugin to $Target"
         """
@@ -104,7 +106,7 @@ def _write_install_scripts(zf: zipfile.ZipFile) -> int:
         """\
         #!/bin/sh
         set -eu
-        MODE="${1:-embedded}"
+        MODE="${1:-sidecar}"
         TARGET="${2:-${ZBRUSH_USER_ASSETS_DIR:-${ZBRUSH_PLUGIN_PATH%%:*}}}"
         [ -n "$TARGET" ] || { echo "Pass target or export ZBRUSH_USER_ASSETS_DIR/ZBRUSH_PLUGIN_PATH" >&2; exit 2; }
         ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -114,7 +116,8 @@ def _write_install_scripts(zf: zipfile.ZipFile) -> int:
           cp -R "$ROOT/embedded/dcc_mcp_zbrush" "$TARGET/"
           cp "$ROOT/embedded/dcc_mcp_zbrush_plugin.py" "$TARGET/"
         else
-          cp "$ROOT/sidecar/mcp_socket_bridge.py" "$TARGET/"
+          mkdir -p "$TARGET/Python"
+          cp "$ROOT/sidecar/mcp_socket_bridge.py" "$TARGET/Python/init.py"
         fi
         echo "Installed dcc-mcp-zbrush $MODE plugin to $TARGET"
         """

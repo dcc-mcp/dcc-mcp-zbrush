@@ -4,7 +4,7 @@
 
 project:
   name: dcc-mcp-zbrush
-  description: ZBrush MCP server — embedded Python mode + sidecar socket bridge
+  description: ZBrush MCP server — external sidecar with a main-thread Python bridge
   repo_url: https://github.com/loonghao/dcc-mcp-zbrush
 
 target_host:
@@ -14,15 +14,15 @@ target_host:
 
 modes:
   embedded:
-    description: Python plugin inside ZBrush
-    stack: "Python plugin inside ZBrush → dcc-mcp-core MCP HTTP server → zbrush.commands"
-    when: "ZBrush 2026.1+ with Python SDK"
-    default: "Plugin default (DCC_MCP_ZBRUSH_MODE=embedded)"
+    description: Advanced pure-Python experiments inside ZBrush
+    stack: "Python plugin inside ZBrush → zbrush.commands"
+    when: "A compatible pure-Python server is provided; do not load dcc-mcp-core _core.pyd"
+    default: "Not recommended for released dcc-mcp-core wheels"
   sidecar:
-    description: External MCP process / restricted installs
-    stack: "External Python → TCP :9876 → bridge/plugin/mcp_socket_bridge.py inside ZBrush"
-    when: "External MCP process / restricted installs"
-    default: "CLI default (dcc-mcp-zbrush --mode sidecar)"
+    description: External MCP process with in-ZBrush main-thread bridge
+    stack: "External Python → TCP :9876 → <Asset Directory>/Python/init.py → zbrush.commands"
+    when: "Production GUI and CI clients"
+    default: "Recommended default (dcc-mcp-zbrush --mode sidecar)"
 
 autodetect:
   method: "resolve_mode() detects ZBrush availability; falls back to sidecar"
@@ -31,6 +31,7 @@ autodetect:
 do_not_assume:
   - "ZBrush HTTP REST API — it does not exist in official docs"
   - "Rust: only via dcc-mcp-core wheel; no Rust plugin inside ZBrush"
+  - "dcc-mcp-core _core.pyd is safe to import into the ZBrush embedded VM"
 
 ports:
   mcp: 8765
@@ -43,7 +44,7 @@ env_vars:
     purpose: "MCP HTTP port"
   - name: DCC_MCP_ZBRUSH_MODE
     default: auto
-    purpose: "embedded or sidecar"
+    purpose: "sidecar by default; embedded is advanced and pure-Python only"
   - name: DCC_MCP_ZBRUSH_AUTOSTART
     default: "1"
     purpose: "Auto-start embedded server from plugin"
@@ -89,7 +90,7 @@ key_files:
   - path: src/dcc_mcp_zbrush/bridge.py
     role: "Sidecar socket bridge client"
   - path: bridge/plugin/mcp_socket_bridge.py
-    role: "In-ZBrush TCP plugin"
+    role: "In-ZBrush main-thread TCP bridge installed as Python/init.py"
   - path: bridge/plugin/dcc_mcp_zbrush/__init__.py
     role: "Auto-start embedded server"
 
@@ -102,7 +103,9 @@ agent_entry_points:
 zbrush_vm_constraints:
   - "Persistent interpreter shared across scripts"
   - "subprocess / multiprocessing invoking sys.executable are unsupported"
-  - "Always register in-process executor in embedded mode"
+  - "Python background threads do not run reliably after a startup script returns"
+  - "All zbrush.commands calls must run on the host main thread"
+  - "The socket bridge must pump zbc.update while polling with a short timeout"
   - "Scene APIs must use affinity: main"
 
 external_docs:
@@ -136,16 +139,18 @@ mcp_config:
     url: "http://127.0.0.1:9765/mcp"
     label: "With gateway (multi-DCC)"
 
-install_steps_embedded:
-  - title: "New install (PyPI + plugin ZIP)"
+install_steps:
+  - title: "Recommended sidecar install (PyPI + plugin ZIP)"
     steps:
       - "pip install dcc-mcp-zbrush"
-      - "Download plugin ZIP from GitHub Releases and run installer"
+      - "Download plugin ZIP and run installer in sidecar mode"
+      - "Verify <Asset Directory>/Python/init.py exists"
       - "Restart ZBrush"
-  - title: "From source checkout"
+      - "Run dcc-mcp-zbrush --mode sidecar"
+  - title: "Sidecar from source checkout"
     steps:
       - "pip install -e \".[dev]\""
-      - "Copy the embedded package and dcc_mcp_zbrush_plugin.py to the ZBrush Asset Directory or ZBRUSH_PLUGIN_PATH root"
+      - "Copy bridge/plugin/mcp_socket_bridge.py to <Asset Directory>/Python/init.py"
       - "Restart ZBrush"
 
 health_checks:
@@ -159,10 +164,10 @@ failure_modes:
     fix: Start ZBrush
   - problem: MCP endpoint unreachable
     cause: Wrong mode or port
-    fix: "Set DCC_MCP_ZBRUSH_MODE=embedded; check port 8765"
+    fix: "Start dcc-mcp-zbrush --mode sidecar and check ports 8765/9876"
   - problem: ZBrushNotAvailableError
     cause: Socket bridge plugin not installed
-    fix: Copy mcp_socket_bridge.py directly to the ZBrush Asset Directory or ZBRUSH_PLUGIN_PATH root
+    fix: Copy mcp_socket_bridge.py to <Asset Directory>/Python/init.py and restart ZBrush
   - problem: subprocess fails
     cause: "ZBrush Python VM does not support subprocess"
     fix: Use execute_python skill instead

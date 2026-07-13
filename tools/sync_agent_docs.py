@@ -53,7 +53,7 @@ def _generate_agents_md(data: dict) -> str:
     ]
     lines.append(f"- **Target host:** {t['software']} **{t['version']}** with embedded Python SDK (`{t['sdk']}`)")
     lines.append(f"- **CLI default:** sidecar (`{p['name']} --mode sidecar`) via `bridge/plugin/mcp_socket_bridge.py`")
-    lines.append(f"- **Plugin default:** embedded Python inside {t['software']} (`DCC_MCP_ZBRUSH_MODE=embedded`)")
+    lines.append(f"- **Plugin default:** sidecar main-thread bridge inside {t['software']}")
     lines.append(
         f"- **Library auto-detect:** `resolve_mode()` detects {t['software']} availability; falls back to sidecar"
     )
@@ -123,8 +123,8 @@ def _generate_claude_md(data: dict) -> str:
         "",
     ]
     lines.append(f"- **Target host:** {t['software']} **{t['version']}** with embedded Python SDK (`{t['sdk']}`)")
-    lines.append(f"- **Primary mode:** embedded Python inside {t['software']} (`DCC_MCP_ZBRUSH_MODE=embedded`)")
-    lines.append("- **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`")
+    lines.append("- **Primary mode:** sidecar MCP process + main-thread `bridge/plugin/mcp_socket_bridge.py`")
+    lines.append(f"- **Advanced mode:** pure-Python embedded experiments inside {t['software']}")
     for note in data["do_not_assume"]:
         lines.append(f"- **Do not assume:** {note}")
 
@@ -197,7 +197,6 @@ def _generate_claude_md(data: dict) -> str:
 
 def _generate_llms_txt(data: dict) -> str:
     p = data["project"]
-    t = data["target_host"]
     lines = [
         f"# {p['name']}",
         "",
@@ -209,14 +208,14 @@ def _generate_llms_txt(data: dict) -> str:
             ["Mode", "When to use", "Stack"],
             [
                 [
-                    "**Embedded (recommended)**",
-                    f"{t['software']} {t['version']} with Python SDK",
-                    data["modes"]["embedded"]["stack"],
+                    "**Sidecar + socket plugin (recommended)**",
+                    "Production GUI and CI clients",
+                    data["modes"]["sidecar"]["stack"],
                 ],
                 [
-                    "**Sidecar + socket plugin**",
-                    "External MCP process / restricted installs",
-                    data["modes"]["sidecar"]["stack"],
+                    "**Embedded (advanced)**",
+                    "Pure-Python experiments only",
+                    data["modes"]["embedded"]["stack"],
                 ],
             ],
         ),
@@ -239,10 +238,10 @@ def _generate_llms_txt(data: dict) -> str:
         "",
         data["distribution"]["plugin_zip_note"],
         "",
-        "## Install steps (embedded)",
+        "## Install steps (recommended sidecar)",
         "",
     ]
-    for group in data["install_steps_embedded"]:
+    for group in data["install_steps"]:
         lines.append(f"### {group['title']}")
         lines.append("")
         for i, step in enumerate(group["steps"], 1):

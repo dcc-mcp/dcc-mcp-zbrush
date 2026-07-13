@@ -242,14 +242,15 @@ class TestPluginExtraction:
         # Sidecar file should NOT exist (skipped in embedded mode)
         assert not (target / "mcp_socket_bridge.py").exists()
 
-    def test_sidecar_mode_installs_socket_bridge_at_scan_root(self, tmp_path: Path) -> None:
+    def test_sidecar_mode_installs_socket_bridge_as_user_python_init(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         zip_path = self._make_test_zip(tmp_path)
         target = tmp_path / "ZBrushAssets"
 
         mod.extract_plugin(zip_path, target, "sidecar", dry_run=False)
 
-        assert (target / "mcp_socket_bridge.py").exists()
+        assert (target / "Python" / "init.py").read_text(encoding="utf-8") == "# socket bridge"
+        assert not (target / "mcp_socket_bridge.py").exists()
         assert not (target / "dcc_mcp_zbrush_plugin.py").exists()
 
     def test_extract_creates_target_directory(self, tmp_path: Path) -> None:

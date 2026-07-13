@@ -368,7 +368,7 @@ def extract_plugin(
             if mode == "embedded" and name.startswith("embedded/"):
                 relative_name = name.removeprefix("embedded/")
             elif mode == "sidecar" and name == "sidecar/mcp_socket_bridge.py":
-                relative_name = "mcp_socket_bridge.py"
+                relative_name = "Python/init.py"
             if not relative_name:
                 continue
 
@@ -484,8 +484,8 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
         print()
         print("  3. Expected response: MCP endpoint info or SSE stream.")
     else:
-        print("  1. Ensure the socket bridge plugin is at the ZBrush plugin scan root:")
-        print(f"     {plugin_dir / 'mcp_socket_bridge.py'}")
+        print("  1. Ensure the socket bridge is the user Python startup entry:")
+        print(f"     {plugin_dir / 'Python' / 'init.py'}")
         print()
         print("  2. Start ZBrush (the socket bridge auto-starts and listens).")
         print()

@@ -5,10 +5,11 @@
 ## Quick facts
 
 - **Target host:** ZBrush **2026.1+** with embedded Python SDK (`zbrush.commands (embedded Python SDK)`)
-- **Primary mode:** embedded Python inside ZBrush (`DCC_MCP_ZBRUSH_MODE=embedded`)
-- **Fallback mode:** sidecar MCP process + `bridge/plugin/mcp_socket_bridge.py`
+- **Primary mode:** sidecar MCP process + main-thread `bridge/plugin/mcp_socket_bridge.py`
+- **Advanced mode:** pure-Python embedded experiments inside ZBrush
 - **Do not assume:** ZBrush HTTP REST API — it does not exist in official docs
 - **Do not assume:** Rust: only via dcc-mcp-core wheel; no Rust plugin inside ZBrush
+- **Do not assume:** dcc-mcp-core _core.pyd is safe to import into the ZBrush embedded VM
 
 ## Cursor / Claude Desktop MCP config
 
@@ -52,14 +53,16 @@ Default minimal loads zbrush-scripting, zbrush-scene.
 |src/dcc_mcp_zbrush/server.py|ZBrushMcpServer composition root|
 |src/dcc_mcp_zbrush/_executor.py|In-process dispatcher for embedded VM|
 |src/dcc_mcp_zbrush/bridge.py|Sidecar socket bridge client|
-|bridge/plugin/mcp_socket_bridge.py|In-ZBrush TCP plugin|
+|bridge/plugin/mcp_socket_bridge.py|In-ZBrush main-thread TCP bridge installed as Python/init.py|
 |bridge/plugin/dcc_mcp_zbrush/__init__.py|Auto-start embedded server|
 
 ## ZBrush Python VM constraints
 
 - Persistent interpreter shared across scripts
 - subprocess / multiprocessing invoking sys.executable are unsupported
-- Always register in-process executor in embedded mode
+- Python background threads do not run reliably after a startup script returns
+- All zbrush.commands calls must run on the host main thread
+- The socket bridge must pump zbc.update while polling with a short timeout
 - Scene APIs must use affinity: main
 
 ## External docs
