@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.13](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.12...v0.2.13) (2026-07-13)
+
+
+### Bug Fixes
+
+* restore ZBrush plugin execution ([#37](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/37)) ([8397a8b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/8397a8b74bd9b6107ccc9bf3d3392fb574217e03))
+
 ## [0.2.12](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.11...v0.2.12) (2026-07-05)
 
 
