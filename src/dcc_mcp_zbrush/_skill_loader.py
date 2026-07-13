@@ -33,7 +33,7 @@ def build_minimal_mode_config(
     skill_names: Optional[Iterable[str]] = None,
 ) -> MinimalModeConfig:
     skills = tuple(skill_names) if skill_names is not None else MINIMAL_SKILLS
-    return MinimalModeConfig(skills=skills, deactivate_groups=())
+    return MinimalModeConfig(skills=skills, deactivate_groups={})
 
 
 def build_minimal_mode_for_stages(stages: Iterable[str]) -> MinimalModeConfig:
@@ -47,4 +47,4 @@ def build_minimal_mode_for_stages(stages: Iterable[str]) -> MinimalModeConfig:
     for skill in STAGE_SKILLS.get("bootstrap", ()):
         if skill not in seen:
             names.insert(0, skill)
-    return MinimalModeConfig(skills=tuple(names), deactivate_groups=())
+    return MinimalModeConfig(skills=tuple(names), deactivate_groups={})

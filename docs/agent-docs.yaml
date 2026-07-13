@@ -145,7 +145,7 @@ install_steps_embedded:
   - title: "From source checkout"
     steps:
       - "pip install -e \".[dev]\""
-      - "Copy bridge/plugin/dcc_mcp_zbrush to ZStartup/ZPlugs64"
+      - "Copy the embedded package and dcc_mcp_zbrush_plugin.py to the ZBrush Asset Directory or ZBRUSH_PLUGIN_PATH root"
       - "Restart ZBrush"
 
 health_checks:
@@ -162,7 +162,7 @@ failure_modes:
     fix: "Set DCC_MCP_ZBRUSH_MODE=embedded; check port 8765"
   - problem: ZBrushNotAvailableError
     cause: Socket bridge plugin not installed
-    fix: Copy mcp_socket_bridge.py to ZStartup
+    fix: Copy mcp_socket_bridge.py directly to the ZBrush Asset Directory or ZBRUSH_PLUGIN_PATH root
   - problem: subprocess fails
     cause: "ZBrush Python VM does not support subprocess"
     fix: Use execute_python skill instead

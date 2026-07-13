@@ -85,6 +85,18 @@ def test_minimal_mode_config():
 
     cfg = build_minimal_mode_config()
     assert tuple(cfg.skills) == MINIMAL_SKILLS
+    assert cfg.deactivate_groups == {}
+
+
+def test_sidecar_executor_runs_skill_scripts_in_server_process():
+    from dcc_mcp_zbrush._executor import attach_inprocess_executor
+
+    server = MagicMock()
+
+    result = attach_inprocess_executor(server)
+
+    assert result is None
+    server.register_inprocess_executor.assert_called_once_with()
 
 
 @patch("dcc_mcp_zbrush.server.ZBrushMcpServer.start")

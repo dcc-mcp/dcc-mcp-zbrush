@@ -32,10 +32,12 @@ pip install -e ".[dev]"
 
    ```bash
    # Windows
-   copy bridge\plugin\dcc_mcp_zbrush %USERPROFILE%\Documents\ZBrushData\ZStartup\ZPlugs64\dcc_mcp_zbrush
+   copy bridge\plugin\dcc_mcp_zbrush %ZBRUSH_USER_ASSETS_DIR%\dcc_mcp_zbrush
+   copy bridge\plugin\dcc_mcp_zbrush_plugin.py %ZBRUSH_USER_ASSETS_DIR%\dcc_mcp_zbrush_plugin.py
 
    # macOS
-   cp -R bridge/plugin/dcc_mcp_zbrush ~/Library/Application\ Support/ZBrush/ZStartup/ZPlugs64/
+   cp -R bridge/plugin/dcc_mcp_zbrush "$ZBRUSH_USER_ASSETS_DIR/"
+   cp bridge/plugin/dcc_mcp_zbrush_plugin.py "$ZBRUSH_USER_ASSETS_DIR/"
    ```
 
 3. Restart ZBrush. MCP endpoint: `http://127.0.0.1:8765/mcp`
@@ -53,10 +55,10 @@ dcc_mcp_zbrush.start_server(mode="embedded")
 
    ```bash
    # Windows
-   copy bridge\plugin\mcp_socket_bridge.py %USERPROFILE%\Documents\ZBrushData\ZStartup\ZPlugs64\
+   copy bridge\plugin\mcp_socket_bridge.py %ZBRUSH_USER_ASSETS_DIR%\
 
    # macOS
-   cp bridge/plugin/mcp_socket_bridge.py ~/Library/Application\ Support/ZBrush/ZStartup/ZPlugs64/
+   cp bridge/plugin/mcp_socket_bridge.py "$ZBRUSH_USER_ASSETS_DIR/"
    ```
 
 2. Start ZBrush.

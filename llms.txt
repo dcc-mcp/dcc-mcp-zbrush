@@ -32,7 +32,7 @@ The wheel does not bundle bridge/plugin/ — that directory is only in the plugi
 ### From source checkout
 
 1. pip install -e ".[dev]"
-2. Copy bridge/plugin/dcc_mcp_zbrush to ZStartup/ZPlugs64
+2. Copy the embedded package and dcc_mcp_zbrush_plugin.py to the ZBrush Asset Directory or ZBRUSH_PLUGIN_PATH root
 3. Restart ZBrush
 
 MCP endpoint: `http://127.0.0.1:8765/mcp`
@@ -103,6 +103,6 @@ SocketBridge.connect()  # sends JSON-RPC ping → expects {"ok": true}
 |---|---|---|
 |Connection refused|ZBrush not running|Start ZBrush|
 |MCP endpoint unreachable|Wrong mode or port|Set DCC_MCP_ZBRUSH_MODE=embedded; check port 8765|
-|ZBrushNotAvailableError|Socket bridge plugin not installed|Copy mcp_socket_bridge.py to ZStartup|
+|ZBrushNotAvailableError|Socket bridge plugin not installed|Copy mcp_socket_bridge.py directly to the ZBrush Asset Directory or ZBRUSH_PLUGIN_PATH root|
 |subprocess fails|ZBrush Python VM does not support subprocess|Use execute_python skill instead|
 |ZBrush version < 2026.1|No Python SDK available|Upgrade to ZBrush 2026.1+|
