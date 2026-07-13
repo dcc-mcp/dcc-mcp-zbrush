@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.15](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.14...v0.2.15) (2026-07-13)
+
+
+### Bug Fixes
+
+* serialize zbrush bridge requests ([#41](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/41)) ([e5230bb](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/e5230bb9dd01065e8b8f81a0ecfb3f56cb8359c2))
+
 ## [0.2.14](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.13...v0.2.14) (2026-07-13)
 
 
