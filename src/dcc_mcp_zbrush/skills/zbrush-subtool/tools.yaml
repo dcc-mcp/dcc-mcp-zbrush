@@ -5,13 +5,13 @@ tools:
       Mutates the active subtool selection in ZBrush.
     source_file: scripts/select_subtool.py
     execution: sync
-    affinity: main
+    affinity: any
     group: core
     annotations:
       destructive_hint: true
       read_only_hint: false
       idempotent_hint: true
-    inputSchema:
+    input_schema:
       type: object
       required: [index]
       properties:
@@ -21,23 +21,21 @@ tools:
           description: Zero-based subtool index on the active tool.
     next-tools:
       on-success:
-        - tool: zbrush_subtool__get_subtool_status
-          reason: Verify visibility/lock flags after switching.
+        - zbrush_subtool__get_subtool_status
       on-failure:
-        - tool: zbrush_scene__list_subtools
-          reason: Re-list valid subtool indices before retrying.
+        - zbrush_scene__list_subtools
   - name: get_subtool_status
     description: >-
       Read decoded visibility and lock flags for a subtool index, or the active
       subtool when index is omitted.
     source_file: scripts/get_subtool_status.py
     execution: sync
-    affinity: main
+    affinity: any
     group: diagnostics
     annotations:
       read_only_hint: true
       idempotent_hint: true
-    inputSchema:
+    input_schema:
       type: object
       properties:
         index:
@@ -46,5 +44,43 @@ tools:
           description: Subtool index. Omit to query the active subtool.
     next-tools:
       on-success:
-        - tool: zbrush_interchange__export_active_subtool_obj
-          reason: Export the active visible subtool when interchange is next.
+        - zbrush_interchange__export_active_subtool_obj
+  - name: refine_active_subtool
+    description: >-
+      Subdivide the active subtool and optionally apply Polish and Inflate
+      deformations. Use for a bounded, typed sculpt refinement pass before
+      exporting the asset to downstream DCCs.
+    source_file: scripts/refine_active_subtool.py
+    execution: sync
+    affinity: any
+    group: core
+    annotations:
+      destructive_hint: true
+      read_only_hint: false
+      idempotent_hint: false
+    input_schema:
+      type: object
+      properties:
+        subdivision_levels:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 1
+          description: Number of Divide operations to apply.
+        polish:
+          type: number
+          minimum: -100
+          maximum: 100
+          default: 0
+          description: Tool Deformation Polish amount; zero skips it.
+        inflate:
+          type: number
+          minimum: -100
+          maximum: 100
+          default: 0
+          description: Tool Deformation Inflate amount; zero skips it.
+    next-tools:
+      on-success:
+        - zbrush_interchange__export_active_subtool_obj
+      on-failure:
+        - zbrush_scene__get_scene_info

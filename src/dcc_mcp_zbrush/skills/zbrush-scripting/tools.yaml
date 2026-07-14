@@ -7,13 +7,13 @@ tools:
       optional `result` variable from the namespace.
     source_file: scripts/execute_python.py
     execution: sync
-    affinity: main
+    affinity: any
     group: core
     annotations:
       destructive_hint: true
       read_only_hint: false
       idempotent_hint: false
-    inputSchema:
+    input_schema:
       type: object
       required: [code]
       properties:
@@ -26,26 +26,23 @@ tools:
           additionalProperties: true
     next-tools:
       on-success:
-        - tool: zbrush_scene__get_scene_info
-          reason: Confirm scene state after arbitrary code.
+        - zbrush_scene__get_scene_info
       on-failure:
-        - tool: zbrush_scripting__get_session_info
-          reason: Verify ZBrush session before retrying.
+        - zbrush_scripting__get_session_info
   - name: get_session_info
     description: >-
       Read ZBrush version, active tool path, and subtool count without modifying
       the scene. Safe health check for MCP wiring.
     source_file: scripts/get_session_info.py
     execution: sync
-    affinity: main
+    affinity: any
     group: diagnostics
     annotations:
       read_only_hint: true
       idempotent_hint: true
-    inputSchema:
+    input_schema:
       type: object
       properties: {}
     next-tools:
       on-success:
-        - tool: zbrush_scene__get_scene_info
-          reason: Inspect active tool and subtool selection next.
+        - zbrush_scene__get_scene_info

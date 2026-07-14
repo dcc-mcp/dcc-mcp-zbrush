@@ -5,39 +5,35 @@ tools:
       index without modifying the scene.
     source_file: scripts/get_scene_info.py
     execution: sync
-    affinity: main
+    affinity: any
     group: core
     annotations:
       read_only_hint: true
       idempotent_hint: true
-    inputSchema:
+    input_schema:
       type: object
       properties: {}
     next-tools:
       on-success:
-        - tool: zbrush_scene__list_subtools
-          reason: Expand subtool inventory with visibility flags.
+        - zbrush_scene__list_subtools
       on-failure:
-        - tool: zbrush_scripting__get_session_info
-          reason: Confirm ZBrush session when scene read fails.
+        - zbrush_scripting__get_session_info
   - name: list_subtools
     description: >-
       List every subtool on the active tool with index, path suffix, and decoded
       visibility/lock flags from get_subtool_status.
     source_file: scripts/list_subtools.py
     execution: sync
-    affinity: main
+    affinity: any
     group: core
     annotations:
       read_only_hint: true
       idempotent_hint: true
-    inputSchema:
+    input_schema:
       type: object
       properties: {}
     next-tools:
       on-success:
-        - tool: zbrush_subtool__select_subtool
-          reason: Switch active subtool by index when editing.
+        - zbrush_subtool__select_subtool
       on-failure:
-        - tool: zbrush_scene__get_scene_info
-          reason: Re-check active tool before retrying.
+        - zbrush_scene__get_scene_info
