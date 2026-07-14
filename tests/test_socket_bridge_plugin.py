@@ -79,9 +79,7 @@ def test_main_thread_pump_drains_requests_and_updates_zbrush() -> None:
             calls.append(("update", redraw_ui))
             raise _StopPump
 
-    bridge._REQUEST_QUEUE.put(
-        {"payload": {"id": 1}, "event": threading.Event()}
-    )
+    bridge._REQUEST_QUEUE.put({"payload": {"id": 1}, "event": threading.Event()})
     bridge._handle_request = lambda payload: calls.append(("request", payload)) or {}
     bridge._import_zbc = lambda: _ZBrushCommands()
 
