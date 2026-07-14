@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import yaml
@@ -45,8 +45,14 @@ def test_tools_yaml_contract(skill_dir: str) -> None:
     data = yaml.safe_load(tools_path.read_text(encoding="utf-8"))
     for tool in data["tools"]:
         assert tool.get("execution") in ("sync", "async")
-        assert tool.get("affinity") in ("main", "any")
+        # Skill handlers run in the sidecar; the socket bridge marshals SDK
+        # work onto ZBrush's main thread inside the host process.
+        assert tool.get("affinity") == "any"
         assert (tools_path.parent / tool["source_file"]).is_file()
+        assert "inputSchema" not in tool
+        assert tool["input_schema"]["type"] == "object"
+        for outcome in tool.get("next-tools", {}).values():
+            assert all(isinstance(tool_name, str) for tool_name in outcome)
 
 
 def test_skills_index_exists() -> None:
@@ -86,3 +92,29 @@ class TestListSubtoolsSkill:
 
         assert result["success"] is True
         assert result["context"]["count"] == 2
+
+
+def test_refine_active_subtool_uses_typed_zbrush_operations() -> None:
+    mod = _load_script("zbrush-subtool", "refine_active_subtool.py")
+    mock_zbc = MagicMock()
+    mock_zbc.get_active_tool_path.return_value = "/ZBrush/signal_forge.ZTL"
+
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.refine_active_subtool(
+            subdivision_levels=2,
+            polish=12,
+            inflate=1.5,
+        )
+
+    assert result["success"] is True
+    assert mock_zbc.press.call_args_list == [
+        call("Tool:Geometry:Divide"),
+        call("Tool:Geometry:Divide"),
+    ]
+    assert mock_zbc.set.call_args_list == [
+        call("Tool:Deformation:Polish", 12.0),
+        call("Tool:Deformation:Inflate", 1.5),
+    ]

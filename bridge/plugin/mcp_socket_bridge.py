@@ -9,14 +9,28 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import socket
 import threading
+import time
 import traceback
 from typing import Any, Dict, Optional
 
 _ZBRUSH_REQUEST_LOCK = threading.Lock()
-_UI_POLL_SECONDS = 0.02
 _CLIENT_READ_SECONDS = 1.0
+_UI_POLL_SECONDS = 0.02
+_REQUEST_TIMEOUT_SECONDS = 120.0
+_REQUEST_QUEUE: "queue.Queue[Dict[str, Any]]" = queue.Queue()
+_BRIDGE_THREAD: Optional[threading.Thread] = None
+
+
+def _mark(message: str) -> None:
+    """Append optional startup diagnostics without depending on host logging."""
+    log_path = os.environ.get("DCC_MCP_ZBRUSH_BRIDGE_LOG", "").strip()
+    if not log_path:
+        return
+    with open(log_path, "a", encoding="utf-8") as stream:
+        stream.write(message + "\n")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -54,6 +68,12 @@ def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> 
         elif method == "get_subtool_status":
             index = params.get("index")
             result = _get_subtool_status(None if index is None else int(index))
+        elif method == "refine_active_subtool":
+            result = _refine_active_subtool(
+                int(params.get("subdivision_levels", 1)),
+                float(params.get("polish", 0)),
+                float(params.get("inflate", 0)),
+            )
         elif method == "export_active_subtool_obj":
             result = _export_active_subtool_obj(str(params.get("output_path", "")))
         elif method == "import_to_scene":
@@ -155,6 +175,28 @@ def _get_subtool_status(index: Optional[int]) -> Dict[str, Any]:
     }
 
 
+def _refine_active_subtool(
+    subdivision_levels: int,
+    polish: float,
+    inflate: float,
+) -> Dict[str, Any]:
+    zbc = _import_zbc()
+    for _ in range(subdivision_levels):
+        zbc.press("Tool:Geometry:Divide")
+    if polish:
+        zbc.set("Tool:Deformation:Polish", polish)
+    if inflate:
+        zbc.set("Tool:Deformation:Inflate", inflate)
+    path = str(zbc.get_active_tool_path() or "")
+    return {
+        "active_tool_path": path,
+        "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+        "subdivision_levels": subdivision_levels,
+        "polish": polish,
+        "inflate": inflate,
+    }
+
+
 def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
     zbc = _import_zbc()
     directory = os.path.dirname(os.path.abspath(output_path))
@@ -242,31 +284,72 @@ def _serve_client(conn: socket.socket) -> None:
             data += chunk
         line = data.split(b"\n", 1)[0]
         payload = json.loads(line.decode("utf-8"))
-        response = _handle_request(payload)
+        response = _dispatch_request(payload)
         conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
 
 
+def _dispatch_request(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue host API work for the ZBrush main thread and await its response."""
+    pending: Dict[str, Any] = {"payload": payload, "event": threading.Event()}
+    _REQUEST_QUEUE.put(pending)
+    if not pending["event"].wait(_REQUEST_TIMEOUT_SECONDS):
+        raise TimeoutError("Timed out waiting for ZBrush main-thread dispatch")
+    return pending["response"]
+
+
+def _drain_request_queue() -> None:
+    """Run queued ZBrush SDK calls from the host's main-thread pump."""
+    while True:
+        try:
+            pending = _REQUEST_QUEUE.get_nowait()
+        except queue.Empty:
+            return
+        try:
+            pending["response"] = _handle_request(pending["payload"])
+        finally:
+            pending["event"].set()
+
+
 def _serve_forever(host: str, port: int) -> None:
-    """Serve requests on ZBrush's main Python thread while pumping its UI."""
-    zbc = _import_zbc()
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((host, port))
-        server.listen(5)
-        server.settimeout(_UI_POLL_SECONDS)
-        print(f"[dcc-mcp-zbrush] socket bridge listening on {host}:{port}")
-        while True:
-            try:
+    """Accept socket clients on a background listener thread."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server.bind((host, port))
+            server.listen(5)
+            _mark(f"listening {host}:{port}")
+            print(f"[dcc-mcp-zbrush] socket bridge listening on {host}:{port}")
+            while True:
                 conn, _addr = server.accept()
-            except socket.timeout:
-                conn = None
-            if conn is not None:
-                try:
-                    _serve_client(conn)
-                except Exception:
-                    print("[dcc-mcp-zbrush] rejected socket client")
-                    traceback.print_exc()
-            zbc.update(redraw_ui=True)
+                threading.Thread(target=_serve_client, args=(conn,), daemon=True).start()
+    except BaseException:
+        _mark("listener failed\n" + traceback.format_exc())
+        raise
+
+
+def _run_main_thread_pump() -> None:
+    """Dispatch queued SDK work while yielding to ZBrush's native UI pump."""
+    zbc = _import_zbc()
+    while True:
+        _drain_request_queue()
+        zbc.update(redraw_ui=True)
+        time.sleep(_UI_POLL_SECONDS)
+
+
+def _start_bridge(host: str, port: int) -> threading.Thread:
+    """Start the listener and run the ZBrush-native pump on the main thread."""
+    global _BRIDGE_THREAD
+
+    if _BRIDGE_THREAD is None or not _BRIDGE_THREAD.is_alive():
+        _BRIDGE_THREAD = threading.Thread(
+            target=_serve_forever,
+            args=(host, port),
+            daemon=True,
+            name="dcc-mcp-zbrush-socket-bridge",
+        )
+        _BRIDGE_THREAD.start()
+    _run_main_thread_pump()
+    return _BRIDGE_THREAD
 
 
 def _running_in_zbrush() -> bool:
@@ -277,14 +360,20 @@ def _running_in_zbrush() -> bool:
     return True
 
 
-def bootstrap_bridge() -> Optional[bool]:
-    """Run the main-thread bridge when executed by ZBrush's plugin scan."""
+def bootstrap_bridge() -> Optional[threading.Thread]:
+    """Start the bridge when executed by ZBrush's plugin scan."""
+    _mark(f"bootstrap module={__name__} in_zbrush={_running_in_zbrush()}")
     if __name__ != "__main__" and not _running_in_zbrush():
         return None
     host = os.environ.get("DCC_MCP_ZBRUSH_SOCKET_HOST", "127.0.0.1")
     port = _env_int("DCC_MCP_ZBRUSH_SOCKET_PORT", 9876)
-    _serve_forever(host, port)
-    return True
+    try:
+        bridge_thread = _start_bridge(host, port)
+    except BaseException:
+        _mark("bootstrap failed\n" + traceback.format_exc())
+        raise
+    _mark(f"bootstrap started {host}:{port}")
+    return bridge_thread
 
 
 _BRIDGE_BOOTSTRAP = bootstrap_bridge()

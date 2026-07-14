@@ -7,7 +7,7 @@ tools:
       list of imported subtool names and any non-fatal warnings.
     source_file: scripts/import_to_scene.py
     execution: sync
-    affinity: main
+    affinity: any
     group: core
     annotations:
       destructive_hint: false
@@ -47,8 +47,6 @@ tools:
           description: "Material import mode: as_authored, default_gray, or skip."
     next-tools:
       on-success:
-        - tool: zbrush_scene__list_subtools
-          reason: Confirm the new subtool appeared in the scene.
+        - zbrush_scene__list_subtools
       on-failure:
-        - tool: zbrush_scene__get_scene_info
-          reason: Check scene state before retrying import.
+        - zbrush_scene__get_scene_info
