@@ -54,13 +54,13 @@ from typing import Optional, Tuple
 GITHUB_REPO = "dcc-mcp/dcc-mcp-zbrush"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 RELEASES_URL = f"{GITHUB_API}/releases"
-MCP_PORT = 8765
+MCP_PORT = 0
 GATEWAY_PORT = 9765
 
 MCP_CONFIG_TEMPLATE = {
     "mcpServers": {
         "zbrush": {
-            "url": f"http://127.0.0.1:{MCP_PORT}/mcp",
+            "url": f"http://127.0.0.1:{GATEWAY_PORT}/mcp",
         }
     }
 }
@@ -434,7 +434,7 @@ def write_mcp_config(
     if target in ("claude", "both"):
         targets.append(("Claude Desktop", _get_claude_config_path()))
 
-    server_config = {"url": f"http://127.0.0.1:{MCP_PORT}/mcp"}
+    server_config = {"url": f"http://127.0.0.1:{GATEWAY_PORT}/mcp"}
 
     print("[4/5] Writing MCP config ...")
 
@@ -479,8 +479,8 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
         print("  1. Restart ZBrush — the plugin auto-starts the MCP server.")
         print("     Plugin location:", plugin_dir)
         print()
-        print("  2. Health check (from any terminal):")
-        print(f"     curl http://127.0.0.1:{MCP_PORT}/mcp")
+        print("  2. Discover the running instance:")
+        print("     dcc-mcp-cli list")
         print()
         print("  3. Expected response: MCP endpoint info or SSE stream.")
     else:
@@ -490,10 +490,10 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
         print("  2. Start ZBrush (the socket bridge auto-starts and listens).")
         print()
         print("  3. Start the sidecar MCP server:")
-        print(f"     dcc-mcp-zbrush --mode sidecar --port {MCP_PORT}")
+        print("     dcc-mcp-zbrush --mode sidecar")
         print()
-        print("  4. Health check:")
-        print(f"     curl http://127.0.0.1:{MCP_PORT}/mcp")
+        print("  4. Discover the running instance:")
+        print("     dcc-mcp-cli list")
         print()
         print("  Both modes support the same skills and tools.")
 
@@ -501,7 +501,7 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
     print("  Troubleshooting:")
     print("  - Connection refused → ZBrush not running or port blocked")
     print("  - Plugin not loading → check the ZBrush Asset Directory/plugin scan root above")
-    print("  - Port conflict → set DCC_MCP_ZBRUSH_PORT env var")
+    print("  - Fixed-port conflict → unset DCC_MCP_ZBRUSH_PORT or choose another value")
     print()
 
 

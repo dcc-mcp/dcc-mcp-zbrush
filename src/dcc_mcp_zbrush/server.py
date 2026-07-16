@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "dcc-mcp-zbrush"
 SERVER_VERSION = __version__
-DEFAULT_PORT = 8765
+DEFAULT_PORT = 0
 _DCC_NAME = "zbrush"
 _BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
@@ -27,7 +27,7 @@ _BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 class ZBrushServerOptions:
     """Adapter-local options for the dcc-mcp-core server contract."""
 
-    port: int = DEFAULT_PORT
+    port: Optional[int] = None
     extra_skill_paths: Optional[List[str]] = None
     server_name: str = SERVER_NAME
     server_version: str = SERVER_VERSION
@@ -66,7 +66,7 @@ class ZBrushMcpServer(DccServerBase):
 
     def __init__(
         self,
-        port: int = DEFAULT_PORT,
+        port: Optional[int] = None,
         extra_skill_paths: Optional[List[str]] = None,
         server_name: str = SERVER_NAME,
         server_version: str = SERVER_VERSION,
@@ -221,7 +221,7 @@ def get_server() -> Optional[ZBrushMcpServer]:
 
 
 def start_server(
-    port: int = DEFAULT_PORT,
+    port: Optional[int] = None,
     extra_skill_paths: Optional[List[str]] = None,
     gateway_port: Optional[int] = None,
     registry_dir: Optional[str] = None,

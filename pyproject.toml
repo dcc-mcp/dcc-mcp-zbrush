@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dcc-mcp-core>=0.19.9,<1.0.0",
+    "dcc-mcp-core>=0.19.45,<1.0.0",
 ]
 
 [project.optional-dependencies]

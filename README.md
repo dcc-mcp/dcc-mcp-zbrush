@@ -48,15 +48,15 @@ no valid Asset Directory is available; pass `-Target` explicitly in that case.
 Launch or restart ZBrush, then start the external MCP sidecar:
 
 ```bash
-dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
+dcc-mcp-zbrush --mode sidecar --socket-port 9876
 ```
 
 ### 4. Health check
 
-Verify the server is running:
+Verify the dynamically allocated instance URL:
 
 ```bash
-curl http://127.0.0.1:8765/mcp
+dcc-mcp-cli list
 ```
 
 ### 5. Configure your AI client
@@ -67,7 +67,7 @@ Add the MCP server to your AI client config (Cursor, Claude Desktop, etc.):
 {
   "mcpServers": {
     "zbrush": {
-      "url": "http://127.0.0.1:8765/mcp"
+      "url": "http://127.0.0.1:9765/mcp"
     }
   }
 }
@@ -97,7 +97,7 @@ GoZ C++ SDK is for **mesh exchange between DCC apps**, not general MCP automatio
 ```
 Recommended sidecar mode:
 
-AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
+AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
          → TCP :9876 → mcp_socket_bridge.py (inside ZBrush) → zbrush.commands
 ```
 
@@ -113,13 +113,13 @@ AI Agent → MCP HTTP :8765 → ZBrushMcpServer (external Python)
 
 - ZBrush **2026.1+**
 - Python **3.9+** on the sidecar host (ZBrush itself ships 3.11)
-- `dcc-mcp-core >= 0.18.7`
+- `dcc-mcp-core >= 0.19.45`
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DCC_MCP_ZBRUSH_PORT` | `8765` | MCP HTTP port |
+| `DCC_MCP_ZBRUSH_PORT` | OS-assigned | Optional fixed MCP instance port |
 | `DCC_MCP_ZBRUSH_MODE` | auto | `embedded` or `sidecar` |
 | `DCC_MCP_ZBRUSH_AUTOSTART` | `1` | Auto-start embedded server from plugin |
 | `DCC_MCP_ZBRUSH_SOCKET_PORT` | `9876` | Socket bridge port (sidecar) |
@@ -167,7 +167,7 @@ def my_tool(**kwargs) -> dict:
 3. Run the MCP server outside ZBrush:
 
 ```bash
-dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
+dcc-mcp-zbrush --mode sidecar --socket-port 9876
 ```
 
 ## Development

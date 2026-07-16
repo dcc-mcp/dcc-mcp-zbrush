@@ -40,7 +40,8 @@ pip install -e ".[dev]"
    cp bridge/plugin/dcc_mcp_zbrush_plugin.py "$ZBRUSH_USER_ASSETS_DIR/"
    ```
 
-3. Restart ZBrush. MCP endpoint: `http://127.0.0.1:8765/mcp`
+3. Restart ZBrush. Use `dcc-mcp-cli list` to inspect the OS-assigned instance
+   URL, or connect through `http://127.0.0.1:9765/mcp`.
 
 Or start manually from ZBrush Python console:
 
@@ -66,7 +67,7 @@ dcc_mcp_zbrush.start_server(mode="embedded")
 3. Run the MCP server outside ZBrush:
 
    ```bash
-   dcc-mcp-zbrush --mode sidecar --port 8765 --socket-port 9876
+   dcc-mcp-zbrush --mode sidecar --socket-port 9876
    ```
 
 ## Plugin packaging

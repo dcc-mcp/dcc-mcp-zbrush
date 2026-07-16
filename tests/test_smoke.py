@@ -154,7 +154,7 @@ class TestMCPConfig:
             mod.write_mcp_config("claude", dry_run=False)
         assert config_path.exists()
         data = json.loads(config_path.read_text(encoding="utf-8"))
-        assert data["mcpServers"]["zbrush"]["url"] == "http://127.0.0.1:8765/mcp"
+        assert data["mcpServers"]["zbrush"]["url"] == "http://127.0.0.1:9765/mcp"
 
     def test_write_config_updates_existing(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -167,7 +167,7 @@ class TestMCPConfig:
         with patch.object(mod, "_get_claude_config_path", return_value=config_path):
             mod.write_mcp_config("claude", dry_run=False)
         data = json.loads(config_path.read_text(encoding="utf-8"))
-        assert data["mcpServers"]["zbrush"]["url"] == "http://127.0.0.1:8765/mcp"
+        assert data["mcpServers"]["zbrush"]["url"] == "http://127.0.0.1:9765/mcp"
 
     def test_write_config_both_targets(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -183,7 +183,7 @@ class TestMCPConfig:
         for p in (cursor_path, claude_path):
             assert p.exists()
             data = json.loads(p.read_text(encoding="utf-8"))
-            assert data["mcpServers"]["zbrush"]["url"] == "http://127.0.0.1:8765/mcp"
+            assert data["mcpServers"]["zbrush"]["url"] == "http://127.0.0.1:9765/mcp"
 
 
 class TestVersionSorting:
@@ -336,7 +336,7 @@ class TestBootstrapConstants:
 
     def test_mcp_port_matches_project(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
-        assert mod.MCP_PORT == 8765
+        assert mod.MCP_PORT == 0
 
     def test_gateway_port_matches_project(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -349,7 +349,7 @@ class TestBootstrapConstants:
     def test_mcp_config_template_has_correct_url(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         url = mod.MCP_CONFIG_TEMPLATE["mcpServers"]["zbrush"]["url"]
-        assert f"127.0.0.1:{mod.MCP_PORT}/mcp" in url
+        assert f"127.0.0.1:{mod.GATEWAY_PORT}/mcp" in url
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +520,7 @@ class TestDocsDrift:
 
     # --- Source truth (single source) ---
 
-    _PORT_FROM_CODE = 8765  # cli.py default
+    _PORT_FROM_CODE = 0  # core/OS-assigned instance port
     _GATEWAY_PORT_FROM_CODE = 9765  # _env.py / README table
     _SOCKET_PORT_FROM_CODE = 9876  # _env.py DEFAULT_SOCKET_PORT / cli.py default
 
@@ -543,7 +543,7 @@ class TestDocsDrift:
     }
 
     _INSTALL_COMMANDS = ["pip install dcc-mcp-zbrush"]
-    _HEALTH_CHECK_COMMANDS = ["curl http://127.0.0.1:8765/mcp"]
+    _HEALTH_CHECK_COMMANDS = ["dcc-mcp-cli list"]
 
     def _read_doc(self, name: str) -> str:
         """Read a documentation file from the project root."""
@@ -554,9 +554,9 @@ class TestDocsDrift:
 
     @pytest.mark.parametrize("doc_file", ["README.md", "llms.txt"])
     def test_mcp_port_in_doc(self, doc_file: str) -> None:
-        """Verify the MCP port (8765) is referenced in the doc."""
+        """Verify the OS-assigned instance-port default is documented."""
         content = self._read_doc(doc_file)
-        assert str(self._PORT_FROM_CODE) in content, f"MCP port {self._PORT_FROM_CODE} not found in {doc_file}"
+        assert "OS-assigned" in content, f"Dynamic instance-port default not found in {doc_file}"
 
     @pytest.mark.parametrize("doc_file", ["README.md", "llms.txt"])
     def test_gateway_port_in_doc(self, doc_file: str) -> None:
@@ -611,11 +611,11 @@ class TestDocsDrift:
 
     def test_health_check_curl_in_readme(self) -> None:
         content = self._read_doc("README.md")
-        assert "curl http://127.0.0.1:8765/mcp" in content, "Health check curl not found in README.md"
+        assert "dcc-mcp-cli list" in content, "CLI discovery check not found in README.md"
 
     def test_health_check_curl_in_llms_txt(self) -> None:
         content = self._read_doc("llms.txt")
-        assert "curl http://127.0.0.1:8765/mcp" in content, "Health check curl not found in llms.txt"
+        assert "dcc-mcp-cli list" in content, "CLI discovery check not found in llms.txt"
 
     # --- MCP endpoint assertions ---
 

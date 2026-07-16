@@ -55,7 +55,7 @@ Auto-detection logic (`_env.resolve_mode`): try `embedded` first; if `zbrush.com
 ┌─────────────────────────▼────────────────────────────────────┐
 │  ZBrush 2026.1+  (process)                                    │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  ZBrushMcpServer  (dcc-mcp-zbrush, port 8765)           │  │
+│  │  ZBrushMcpServer  (dcc-mcp-zbrush, OS-assigned port)    │  │
 │  │  ┌─────────────────────────────────────────────────┐    │  │
 │  │  │  dcc-mcp-core                                    │    │  │
 │  │  │  ├── McpHttpServer (axum HTTP)                   │    │  │
@@ -82,7 +82,7 @@ Auto-detection logic (`_env.resolve_mode`): try `embedded` first; if `zbrush.com
 ┌─────────────────────────▼────────────────────────────────────┐
 │  dcc-mcp-zbrush sidecar process (Python)                      │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  ZBrushMcpServer  (port 8765)                           │  │
+│  │  ZBrushMcpServer  (OS-assigned port)                    │  │
 │  │  ├── dcc-mcp-core stack                                 │  │
 │  │  └── SocketBridge (TCP JSON-RPC client)                 │  │
 │  └─────────────────────────┬───────────────────────────────┘  │
@@ -172,7 +172,7 @@ Auto-detect:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DCC_MCP_ZBRUSH_MODE` | auto | `embedded` or `sidecar` |
-| `DCC_MCP_ZBRUSH_PORT` | 8765 | MCP HTTP server port |
+| `DCC_MCP_ZBRUSH_PORT` | OS-assigned | Optional fixed MCP HTTP instance port |
 | `DCC_MCP_ZBRUSH_SOCKET_HOST` | 127.0.0.1 | Socket bridge host |
 | `DCC_MCP_ZBRUSH_SOCKET_PORT` | 9876 | Socket bridge port |
 | `DCC_MCP_ZBRUSH_AUTOSTART` | 1 | Auto-start embedded server on ZBrush launch |
@@ -182,9 +182,9 @@ Auto-detect:
 
 ### 4.3 MCP Endpoint
 
-```
-http://127.0.0.1:8765/mcp
-```
+Instances bind port `0` by default and publish the exact bound URL through
+discovery. Agents use the stable gateway at `http://127.0.0.1:9765/mcp` or
+inspect instances with `dcc-mcp-cli list`; no instance port is hardcoded.
 
 Streamable HTTP transport per MCP 2025-03-26 spec. The Rust `axum` HTTP server is embedded in `dcc-mcp-core`.
 
