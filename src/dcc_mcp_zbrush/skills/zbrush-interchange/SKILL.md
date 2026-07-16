@@ -5,7 +5,7 @@ description: >-
   need OBJ export from the active subtool. Not for in-scene sculpt edits — use
   zbrush-subtool first to pick the correct subtool.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.18+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.19.45+"
 allowed-tools: Bash Read Write
 metadata:
   dcc-mcp:

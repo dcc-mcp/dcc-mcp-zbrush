@@ -65,6 +65,15 @@ def test_resolve_mode_defaults_to_sidecar_outside_zbrush():
     assert resolve_mode() == "sidecar"
 
 
+@pytest.mark.parametrize(("port", "expected"), [(None, 18765), (0, 0)])
+def test_server_dynamic_port_and_explicit_zero_override_env(monkeypatch, port, expected):
+    from dcc_mcp_zbrush import ZBrushMcpServer
+
+    monkeypatch.setenv("DCC_MCP_ZBRUSH_PORT", "18765")
+    server = ZBrushMcpServer(port=port, mode="sidecar")
+    assert server._config.port == expected
+
+
 def test_socket_bridge_ping(monkeypatch):
     from dcc_mcp_zbrush.bridge import SocketBridge
 

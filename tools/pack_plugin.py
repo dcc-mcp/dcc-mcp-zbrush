@@ -60,7 +60,7 @@ def _install_readme(version: str) -> str:
         1. Copy ``embedded/dcc_mcp_zbrush`` and ``embedded/dcc_mcp_zbrush_plugin.py``
            directly into the ZBrush Asset Directory or a ``ZBRUSH_PLUGIN_PATH`` root.
         2. Ensure ``dcc-mcp-zbrush`` is on ZBrush ``PYTHONPATH``.
-        3. Restart ZBrush. MCP endpoint: http://127.0.0.1:8765/mcp
+        3. Restart ZBrush. Run `dcc-mcp-cli list` to discover its instance URL.
 
         Sidecar socket bridge (recommended)
         -----------------------------------

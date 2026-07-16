@@ -6,7 +6,7 @@ description: >-
   returns an ImportToSceneResult with the imported subtool names. Use when
   you need to bring geometry from disk into the active ZBrush scene.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.18.36+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.19.45+"
 allowed-tools: Bash Read Write
 metadata:
   dcc-mcp:

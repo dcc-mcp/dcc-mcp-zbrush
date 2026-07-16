@@ -13,7 +13,12 @@ from dcc_mcp_zbrush import start_server, stop_server
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="ZBrush MCP Server")
-    parser.add_argument("--port", type=int, default=8765, help="MCP HTTP port")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Optional fixed MCP instance port (default: core/env, then OS-assigned)",
+    )
     parser.add_argument(
         "--gateway-port", type=int, default=None, help="Gateway port (None = core default 9765, 0 = disabled)"
     )

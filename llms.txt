@@ -37,17 +37,17 @@ The wheel does not bundle bridge/plugin/ — that directory is only in the plugi
 2. Copy bridge/plugin/mcp_socket_bridge.py to <Asset Directory>/Python/init.py
 3. Restart ZBrush
 
-MCP endpoint: `http://127.0.0.1:8765/mcp`
+MCP endpoint: `http://127.0.0.1:9765/mcp`
 
 ## MCP config snippets
 
-### Cursor / Claude Desktop (direct)
+### Cursor / Claude Desktop
 
 ```json
 {
   "mcpServers": {
     "dcc-mcp-zbrush": {
-      "url": "http://127.0.0.1:8765/mcp"
+      "url": "http://127.0.0.1:9765/mcp"
     }
   }
 }
@@ -69,7 +69,7 @@ MCP endpoint: `http://127.0.0.1:8765/mcp`
 
 |Variable|Default|Purpose|
 |---|---|---|
-|DCC_MCP_ZBRUSH_PORT|`8765`|MCP HTTP port|
+|DCC_MCP_ZBRUSH_PORT|`OS-assigned`|Optional fixed MCP instance port|
 |DCC_MCP_ZBRUSH_MODE|`auto`|sidecar by default; embedded is advanced and pure-Python only|
 |DCC_MCP_ZBRUSH_AUTOSTART|`1`|Auto-start embedded server from plugin|
 |DCC_MCP_ZBRUSH_SOCKET_PORT|`9876`|Socket bridge port (sidecar)|
@@ -88,7 +88,7 @@ MCP endpoint: `http://127.0.0.1:8765/mcp`
 ## Health check
 
 ```bash
-curl http://127.0.0.1:8765/mcp
+dcc-mcp-cli list  # discovers the exact OS-assigned instance URL
 ```
 
 ```bash
@@ -104,7 +104,7 @@ SocketBridge.connect()  # sends JSON-RPC ping → expects {"ok": true}
 |Problem|Likely cause|Fix|
 |---|---|---|
 |Connection refused|ZBrush not running|Start ZBrush|
-|MCP endpoint unreachable|Wrong mode or port|Start dcc-mcp-zbrush --mode sidecar and check ports 8765/9876|
+|MCP endpoint unreachable|Wrong mode or stale direct URL|Start dcc-mcp-zbrush --mode sidecar, then run dcc-mcp-cli list; socket bridge remains on 9876|
 |ZBrushNotAvailableError|Socket bridge plugin not installed|Copy mcp_socket_bridge.py to <Asset Directory>/Python/init.py and restart ZBrush|
 |subprocess fails|ZBrush Python VM does not support subprocess|Use execute_python skill instead|
 |ZBrush version < 2026.1|No Python SDK available|Upgrade to ZBrush 2026.1+|
