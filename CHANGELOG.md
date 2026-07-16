@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.18](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.17...v0.2.18) (2026-07-16)
+
+
+### Bug Fixes
+
+* use OS-assigned MCP instance ports ([#47](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/47)) ([113232c](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/113232cd88517f5336152cee21d083017511a013))
+
 ## [0.2.17](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.16...v0.2.17) (2026-07-14)
 
 
