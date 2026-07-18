@@ -5,7 +5,7 @@
 project:
   name: dcc-mcp-zbrush
   description: ZBrush MCP server — external sidecar with a main-thread Python bridge
-  repo_url: https://github.com/loonghao/dcc-mcp-zbrush
+  repo_url: https://github.com/dcc-mcp/dcc-mcp-zbrush
 
 target_host:
   software: ZBrush
@@ -112,7 +112,7 @@ external_docs:
   - label: ZBrush Python SDK
     url: https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html
   - label: Upstream core llms.txt
-    url: https://github.com/loonghao/dcc-mcp-core/blob/main/llms.txt
+    url: https://github.com/dcc-mcp/dcc-mcp-core/blob/main/llms.txt
 
 distribution:
   artifacts:
@@ -127,7 +127,7 @@ distribution:
     - name: Repo source
       source: git clone
       scope: "Everything above + bridge/plugin/ raw sources + tests + tools"
-      install: git clone https://github.com/loonghao/dcc-mcp-zbrush.git
+      install: git clone https://github.com/dcc-mcp/dcc-mcp-zbrush.git
   plugin_zip_note: "The wheel does not bundle bridge/plugin/ — that directory is only in the plugin ZIP or the repo checkout."
 
 mcp_endpoint: "http://127.0.0.1:9765/mcp"

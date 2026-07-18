@@ -34,8 +34,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/loonghao/dcc-mcp-zbrush"
-Repository = "https://github.com/loonghao/dcc-mcp-zbrush"
+Homepage = "https://github.com/dcc-mcp/dcc-mcp-zbrush"
+Repository = "https://github.com/dcc-mcp/dcc-mcp-zbrush"
 
 [project.scripts]
 dcc-mcp-zbrush = "dcc_mcp_zbrush.cli:main"
