@@ -2,6 +2,21 @@
 
 > Navigation map for AI agents. Detailed API lives in `README.md`.
 
+## Agent Control Path
+
+AI agent runtimes default to the shared gateway through the
+`dcc-cli-gateway` skill and `dcc-mcp-cli` REST commands:
+
+```bash
+dcc-mcp-cli search --query "<task>" --dcc-type zbrush
+dcc-mcp-cli describe <tool-slug>
+dcc-mcp-cli call <tool-slug> --json '{"key":"value"}'
+```
+
+Use `dcc-mcp-cli list` for live instances and `dcc-mcp-cli dcc-types` for
+release-catalog support. IDE users may continue to configure the gateway MCP
+endpoint; adapter-local Python start APIs are for host bootstrap and tests.
+
 ## Quick facts
 
 - **Target host:** ZBrush **2026.1+** with embedded Python SDK (`zbrush.commands (embedded Python SDK)`)
@@ -52,4 +67,4 @@ Default minimal mode loads zbrush-scripting, zbrush-scene.
 ## External docs
 
 - ZBrush Python SDK: https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html
-- Upstream core llms.txt: https://github.com/loonghao/dcc-mcp-core/blob/main/llms.txt
+- Upstream core llms.txt: https://github.com/dcc-mcp/dcc-mcp-core/blob/main/llms.txt

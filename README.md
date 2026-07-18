@@ -1,11 +1,34 @@
 # dcc-mcp-zbrush
 
+<p align="center">
+  <img src="docs/assets/dcc-mcp-zbrush.svg" alt="DCC-MCP · ZBRUSH" width="600">
+</p>
+
+## Agent workflow
+
+AI agents should use the shared gateway through `dcc-mcp-cli`; IDE users may
+continue to use the MCP endpoint. Prefer typed skills and tools over raw scripts.
+
+```bash
+dcc-mcp-cli dcc-types
+dcc-mcp-cli list
+dcc-mcp-cli search --query "<task>" --dcc-type zbrush
+dcc-mcp-cli describe <tool-slug>
+dcc-mcp-cli call <tool-slug> --json '{"key":"value"}'
+```
+
+`dcc-types` reports release-catalog support; `list` reports live sessions. If a
+tool belongs to an inactive progressive skill, call `dcc-mcp-cli load-skill <skill-name> --dcc-type zbrush` before retrying. For post-task improvement,
+attach a stable session id with `--meta-json`, query `dcc-mcp-cli stats --range 24h --session-id <task-id>`, then pass the bounded evidence to the
+`review_skill_improvement` prompt from `dcc-mcp-skills-creator`.
+
+
 [![PyPI](https://img.shields.io/pypi/v/dcc-mcp-zbrush)](https://pypi.org/project/dcc-mcp-zbrush/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange)](https://github.com/loonghao/dcc-mcp-zbrush)
+[![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange)](https://github.com/dcc-mcp/dcc-mcp-zbrush)
 
-ZBrush adapter for the [DCC Model Context Protocol](https://github.com/loonghao/dcc-mcp-core) ecosystem.
+ZBrush adapter for the [DCC Model Context Protocol](https://github.com/dcc-mcp/dcc-mcp-core) ecosystem.
 
 > **Requires ZBrush 2026.1+** with the official [Python SDK](https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html) (CPython 3.11 embedded in ZBrush).
 
@@ -21,7 +44,7 @@ This installs the `dcc-mcp-zbrush` Python package — the MCP HTTP server that b
 
 ### 2. Install the ZBrush plugin
 
-The plugin files (auto-start script, socket bridge) are distributed separately. Download the plugin ZIP from the [latest GitHub Release](https://github.com/loonghao/dcc-mcp-zbrush/releases/latest):
+The plugin files (auto-start script, socket bridge) are distributed separately. Download the plugin ZIP from the [latest GitHub Release](https://github.com/dcc-mcp/dcc-mcp-zbrush/releases/latest):
 
 ```
 dcc-mcp-zbrush-plugin-<version>.zip

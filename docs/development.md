@@ -11,7 +11,7 @@ Source-based workflow for contributors and early adopters.
 ## Setup
 
 ```bash
-git clone https://github.com/loonghao/dcc-mcp-zbrush.git
+git clone https://github.com/dcc-mcp/dcc-mcp-zbrush.git
 cd dcc-mcp-zbrush
 
 # Editable install with dev dependencies
