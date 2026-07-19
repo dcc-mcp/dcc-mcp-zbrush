@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.19](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.18...v0.2.19) (2026-07-19)
+
+
+### Documentation
+
+* align agent workflow and branding ([70e56f9](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/70e56f9846d87ca961cbf47ae5f847b0a423ac90))
+* document CLI install and updates ([b6fbc9b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/b6fbc9b13139419b8abaa626f86a4043224a9522))
+
 ## [0.2.18](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.17...v0.2.18) (2026-07-16)
 
 
