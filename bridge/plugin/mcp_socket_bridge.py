@@ -3,6 +3,9 @@
 Copy this file into ZStartup/ZPlugs64 or expose it via ZBRUSH_PLUGIN_PATH.
 It listens on TCP port 9876 (override with DCC_MCP_ZBRUSH_SOCKET_PORT) and
 executes JSON-RPC requests against ``zbrush.commands``.
+
+Also exposes unified menu actions (PIP-2905): Copy Instance ID, Server Info,
+About DCC MCP — callable from the ZBrush ZPlugin menu or Python console.
 """
 
 from __future__ import annotations
@@ -377,3 +380,112 @@ def bootstrap_bridge() -> Optional[threading.Thread]:
 
 
 _BRIDGE_BOOTSTRAP = bootstrap_bridge()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Unified DCC MCP menu actions (PIP-2905)
+# ──────────────────────────────────────────────────────────────────────────────
+# These functions are callable from the ZBrush ZPlugin menu or Python console.
+# They require dcc-mcp-zbrush to be importable (installed or on PYTHONPATH).
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def dcc_mcp_copy_instance_id() -> None:
+    """Copy the DCC MCP instance UUID to the system clipboard."""
+    try:
+        from dcc_mcp_zbrush._menu import copy_instance_id
+
+        copy_instance_id()
+    except ImportError:
+        _fallback_copy_instance_id()
+
+
+def dcc_mcp_show_server_info() -> None:
+    """Show DCC MCP server information."""
+    try:
+        from dcc_mcp_zbrush._menu import show_server_info
+
+        show_server_info()
+    except ImportError:
+        _fallback_server_info()
+
+
+def dcc_mcp_show_about() -> None:
+    """Show About DCC MCP dialog."""
+    try:
+        from dcc_mcp_zbrush._menu import show_about
+
+        show_about()
+    except ImportError:
+        _fallback_about()
+
+
+# ── fallback implementations when dcc-mcp-zbrush is not importable ────────
+
+
+def _fallback_copy_instance_id() -> None:
+    """Fallback: try to copy instance ID from environment or server."""
+    import sys
+
+    instance_id = os.environ.get("DCC_MCP_INSTANCE_ID", "").strip()
+    if not instance_id:
+        print("DCC MCP: Instance ID not available. Is the server running?")  # noqa: T201
+        return
+
+    for binding in ("PySide2", "PySide6"):
+        try:
+            mod = __import__(binding)
+            app = mod.QtWidgets.QApplication.instance()
+            if app is not None:
+                app.clipboard().setText(instance_id)
+                print(f"DCC MCP: Instance ID copied to clipboard: {instance_id}")  # noqa: T201
+                return
+        except Exception:
+            continue
+    print(f"Instance ID: {instance_id}")  # noqa: T201
+
+
+def _fallback_server_info() -> None:
+    """Fallback: show server info using available tools."""
+    import sys
+
+    instance_id = os.environ.get("DCC_MCP_INSTANCE_ID", "").strip() or "N/A"
+    gateway_port = os.environ.get("DCC_MCP_GATEWAY_PORT", "9765")
+    server_port = os.environ.get("DCC_MCP_ZBRUSH_PORT", "0")
+
+    try:
+        import zbrush.commands as zbc  # noqa: PLC0415
+
+        zb_version = f"{int(zbc.zbrush_info(0))}.{int(zbc.zbrush_info(1))}"
+    except Exception:
+        zb_version = "unknown"
+
+    msg = (
+        f"Instance UUID: {instance_id}\n"
+        f"DCC: ZBrush {zb_version}\n"
+        f"PID: {os.getpid()}\n"
+        f"Server Port: {server_port}\n"
+        f"Gateway Port: {gateway_port}\n"
+        f"Python: {sys.version.split()[0]}"
+    )
+    try:
+        from PySide2.QtWidgets import QMessageBox  # noqa: PLC0415
+
+        QMessageBox.information(None, "DCC MCP — Server Info", msg)
+    except Exception:
+        print(f"[dcc-mcp-zbrush] DCC MCP — Server Info\n{msg}")  # noqa: T201
+
+
+def _fallback_about() -> None:
+    """Fallback: show about dialog."""
+    msg = (
+        "dcc-mcp-zbrush\n"
+        "DCC MCP — AI-driven DCC automation.\n"
+        "https://github.com/dcc-mcp/dcc-mcp-zbrush"
+    )
+    try:
+        from PySide2.QtWidgets import QMessageBox  # noqa: PLC0415
+
+        QMessageBox.information(None, "About DCC MCP", msg)
+    except Exception:
+        print(f"[dcc-mcp-zbrush] About DCC MCP\n{msg}")  # noqa: T201
