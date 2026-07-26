@@ -10,7 +10,10 @@ def _autostart_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-if __name__ == "__main__" and _autostart_enabled():
+if __name__ == "__main__":
     import dcc_mcp_zbrush
 
-    dcc_mcp_zbrush.start_server(mode="embedded")
+    if not dcc_mcp_zbrush.install_menu():
+        print("dcc-mcp-zbrush — failed to register DCC MCP palette")  # noqa: T201
+    if _autostart_enabled():
+        dcc_mcp_zbrush.start_server(mode="embedded")

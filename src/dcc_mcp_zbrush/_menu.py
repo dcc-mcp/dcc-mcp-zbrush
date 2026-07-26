@@ -6,52 +6,43 @@ Works in embedded mode (server in-process) and sidecar mode (bridge plugin).
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import sys
-from typing import Optional
+from typing import Any, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_GATEWAY_PORT = 9765
+_MENU_PATH = "DCC MCP"
 
 
 # ── server helpers ──────────────────────────────────────────────────────────
 
 
 def _resolve_instance_id() -> Optional[str]:
-    """Return the DCC MCP instance UUID from the running server, if available."""
+    """Return the public instance UUID from the running server, if available.
+
+    Instance identity is owned by dcc-mcp-core.  Do not reconstruct it from
+    registry files or private server/config attributes here.
+    """
     try:
         from dcc_mcp_zbrush.server import get_server  # noqa: PLC0415
 
         srv = get_server()
     except Exception:
-        srv = None
+        return None
 
-    if srv is not None:
-        # Try server object attribute first (DccServerBase subclass)
-        instance_id = getattr(srv, "instance_id", None)
-        if instance_id:
-            return str(instance_id)
-        # Try config attribute
-        config = getattr(srv, "_config", None)
-        if config is not None:
-            instance_id = getattr(config, "instance_id", None)
-            if instance_id:
-                return str(instance_id)
-        # Try Rust core server attribute
-        core = getattr(srv, "_server", None)
-        if core is not None:
-            instance_id = getattr(core, "instance_id", None)
-            if instance_id:
-                return str(instance_id)
+    if srv is None:
+        return None
 
-    # Fallback: environment variable set by bootstrap
-    env_id = os.environ.get("DCC_MCP_INSTANCE_ID", "").strip()
-    if env_id:
-        return env_id
-
-    return None
+    try:
+        instance_id = srv.instance_id
+    except (AttributeError, RuntimeError):
+        return None
+    value = str(instance_id).strip() if instance_id is not None else ""
+    return value or None
 
 
 def _server_url() -> str:
@@ -75,12 +66,20 @@ def _server_url() -> str:
 # ── clipboard ───────────────────────────────────────────────────────────────
 
 
-def _set_clipboard_text(text: str) -> None:
-    """Set the system clipboard text, trying PySide2 then PySide6."""
+def _qt_widgets_modules() -> Iterator[Any]:
+    """Yield importable QtWidgets modules without relying on package side effects."""
     for binding in ("PySide2", "PySide6"):
         try:
-            mod = __import__(binding)
-            app = mod.QtWidgets.QApplication.instance()
+            yield importlib.import_module(f"{binding}.QtWidgets")
+        except Exception:
+            continue
+
+
+def _set_clipboard_text(text: str) -> None:
+    """Set the system clipboard text, trying PySide2 then PySide6."""
+    for widgets in _qt_widgets_modules():
+        try:
+            app = widgets.QApplication.instance()
             if app is not None:
                 app.clipboard().setText(text)
                 return
@@ -92,13 +91,18 @@ def _set_clipboard_text(text: str) -> None:
 # ── zbrush helpers ──────────────────────────────────────────────────────────
 
 
+def _zbrush_commands() -> Any:
+    """Return the official ZBrush command module when running in the host."""
+    try:
+        import zbrush.commands as zbc  # noqa: PLC0415
+    except ImportError:
+        return None
+    return zbc
+
+
 def _is_inside_zbrush() -> bool:
     """Return True when running inside the ZBrush embedded Python VM."""
-    try:
-        import zbrush.commands  # noqa: F401, PLC0415
-    except ImportError:
-        return False
-    return True
+    return _zbrush_commands() is not None
 
 
 def _zbrush_version() -> str:
@@ -112,16 +116,20 @@ def _zbrush_version() -> str:
 
 
 def _show_message(title: str, message: str) -> None:
-    """Show a message to the user — PySide2 dialog inside ZBrush, print outside."""
-    if _is_inside_zbrush():
+    """Show a native ZBrush message, then fall back through Qt bindings."""
+    zbc = _zbrush_commands()
+    if zbc is not None:
         try:
-            from PySide2.QtWidgets import QMessageBox  # noqa: PLC0415
-
-            QMessageBox.information(None, title, message)
+            zbc.message_ok(message, title)
             return
         except Exception:
             pass
-    # Fallback for non-Qt sessions
+    for widgets in _qt_widgets_modules():
+        try:
+            widgets.QMessageBox.information(None, title, message)
+            return
+        except Exception:
+            continue
     print(f"[dcc-mcp-zbrush] {title}\n{message}")  # noqa: T201
 
 
@@ -134,7 +142,8 @@ def copy_instance_id() -> None:
     if not instance_id:
         _show_message(
             "DCC MCP — Copy Instance ID",
-            "Instance ID not available. Is the server running?",
+            "No registered instance ID is available. Start the MCP server with "
+            "gateway registration enabled, or run `dcc-mcp-cli list` from a terminal.",
         )
         return
     try:
@@ -194,7 +203,40 @@ def show_about() -> None:
         f"dcc-mcp-zbrush v{__version__}\n"
         f"ZBrush {zbrush_version}\n"
         f"Python {sys.version.split()[0]}\n\n"
-        "DCC MCP — AI-driven DCC automation.\n"
+        "DCC MCP — shared infrastructure for DCC automation.\n"
         "https://github.com/dcc-mcp/dcc-mcp-zbrush"
     )
     _show_message("About DCC MCP", msg)
+
+
+def _on_copy_instance_id(_sender: str) -> None:
+    copy_instance_id()
+
+
+def _on_show_server_info(_sender: str) -> None:
+    show_server_info()
+
+
+def _on_show_about(_sender: str) -> None:
+    show_about()
+
+
+def install_menu(zbc: Any = None) -> bool:
+    """Install the top-level DCC MCP palette through the official ZBrush SDK."""
+    zbc = zbc or _zbrush_commands()
+    if zbc is None:
+        return False
+
+    if not zbc.exists(_MENU_PATH) and not zbc.add_palette(_MENU_PATH, docking_bar=1):
+        return False
+
+    actions = (
+        ("Copy Instance ID", "Copy the DCC MCP instance UUID to the clipboard.", _on_copy_instance_id),
+        ("Server Info", "Show DCC MCP server and runtime information.", _on_show_server_info),
+        ("About DCC MCP", "Show adapter and ZBrush version information.", _on_show_about),
+    )
+    for label, info, callback in actions:
+        item_path = f"{_MENU_PATH}:{label}"
+        if not zbc.exists(item_path) and not zbc.add_button(item_path, info, callback):
+            return False
+    return True

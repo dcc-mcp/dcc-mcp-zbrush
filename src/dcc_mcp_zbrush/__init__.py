@@ -15,6 +15,7 @@ from dcc_mcp_zbrush._env import (
 )
 from dcc_mcp_zbrush._menu import (
     copy_instance_id,
+    install_menu,
     show_about,
     show_server_info,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "import_zbc",
     "is_zbrush_available",
     "is_zb_available",
+    "install_menu",
     "resolve_enable_gateway_failover",
     "resolve_minimal_mode_enabled",
     "resolve_mode",

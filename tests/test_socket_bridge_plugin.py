@@ -94,20 +94,101 @@ def test_main_thread_pump_drains_requests_and_updates_zbrush() -> None:
 def test_bridge_bootstraps_when_loaded_by_zbrush(monkeypatch) -> None:
     """ZBrush plugin scanning does not guarantee a main module name."""
     bridge = _load_bridge_plugin()
-    calls: list[tuple[str, int]] = []
+    calls: list[object] = []
     bridge_thread = object()
 
     monkeypatch.setattr(bridge, "_running_in_zbrush", lambda: True)
+    monkeypatch.setattr(bridge, "_install_menu", lambda: calls.append("menu") or True)
     monkeypatch.setattr(
         bridge,
         "_start_bridge",
-        lambda host, port: calls.append((host, port)) or bridge_thread,
+        lambda host, port: calls.append(("bridge", host, port)) or bridge_thread,
     )
     monkeypatch.setenv("DCC_MCP_ZBRUSH_SOCKET_HOST", "127.0.0.1")
     monkeypatch.setenv("DCC_MCP_ZBRUSH_SOCKET_PORT", "9910")
 
     assert bridge.bootstrap_bridge() is bridge_thread
-    assert calls == [("127.0.0.1", 9910)]
+    assert calls == ["menu", ("bridge", "127.0.0.1", 9910)]
+
+
+def test_bridge_bootstrap_continues_when_menu_registration_fails(monkeypatch) -> None:
+    bridge = _load_bridge_plugin()
+    bridge_thread = object()
+
+    monkeypatch.setattr(bridge, "_running_in_zbrush", lambda: True)
+    monkeypatch.setattr(bridge, "_install_menu", MagicMock(side_effect=RuntimeError("SDK rejected palette")))
+    start_bridge = MagicMock(return_value=bridge_thread)
+    monkeypatch.setattr(bridge, "_start_bridge", start_bridge)
+
+    assert bridge.bootstrap_bridge() is bridge_thread
+    start_bridge.assert_called_once()
+
+
+def test_bridge_registers_official_palette_and_buttons() -> None:
+    bridge = _load_bridge_plugin()
+    zbc = MagicMock()
+    zbc.exists.return_value = False
+    zbc.add_palette.return_value = True
+    zbc.add_button.return_value = True
+
+    assert bridge._install_menu(zbc) is True
+    zbc.add_palette.assert_called_once_with("DCC MCP", docking_bar=1)
+    assert [args.args[0] for args in zbc.add_button.call_args_list] == [
+        "DCC MCP:Copy Instance ID",
+        "DCC MCP:Server Info",
+        "DCC MCP:About DCC MCP",
+    ]
+
+
+def test_bridge_menu_callbacks_accept_sender_and_dispatch_actions() -> None:
+    bridge = _load_bridge_plugin()
+    zbc = MagicMock()
+    zbc.exists.return_value = False
+    zbc.add_palette.return_value = True
+    zbc.add_button.return_value = True
+    bridge.dcc_mcp_copy_instance_id = MagicMock()
+    bridge.dcc_mcp_show_server_info = MagicMock()
+    bridge.dcc_mcp_show_about = MagicMock()
+
+    assert bridge._install_menu(zbc) is True
+    callbacks = [args.args[2] for args in zbc.add_button.call_args_list]
+    for callback in callbacks:
+        callback("DCC MCP:test")
+
+    bridge.dcc_mcp_copy_instance_id.assert_called_once_with()
+    bridge.dcc_mcp_show_server_info.assert_called_once_with()
+    bridge.dcc_mcp_show_about.assert_called_once_with()
+
+
+def test_bridge_qt_fallback_imports_pyside6_qtwidgets(monkeypatch) -> None:
+    bridge = _load_bridge_plugin()
+    qt6_widgets = MagicMock()
+    imported: list[str] = []
+
+    def import_module(name: str):
+        imported.append(name)
+        if name == "PySide2.QtWidgets":
+            raise ImportError(name)
+        return qt6_widgets
+
+    monkeypatch.setattr(bridge, "_import_zbc", MagicMock(side_effect=ImportError))
+    monkeypatch.setattr(bridge.importlib, "import_module", import_module)
+
+    bridge._show_message("Title", "Body")
+
+    assert imported == ["PySide2.QtWidgets", "PySide6.QtWidgets"]
+    qt6_widgets.QMessageBox.information.assert_called_once_with(None, "Title", "Body")
+
+
+def test_standalone_plugin_instance_id_fails_closed(monkeypatch) -> None:
+    bridge = _load_bridge_plugin()
+    show_message = MagicMock()
+    monkeypatch.setattr(bridge, "_show_message", show_message)
+    monkeypatch.setenv("DCC_MCP_INSTANCE_ID", "must-not-be-used")
+
+    bridge._fallback_copy_instance_id()
+
+    assert "dcc-mcp-cli list" in show_message.call_args.args[1]
 
 
 def test_bridge_dispatches_refine_active_subtool_on_host_thread() -> None:
