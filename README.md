@@ -98,6 +98,19 @@ Launch or restart ZBrush, then start the external MCP sidecar:
 dcc-mcp-zbrush --mode sidecar --socket-port 9876
 ```
 
+The plugin registers a top-level **DCC MCP** palette through the official
+ZBrush Python SDK with these actions:
+
+- **Copy Instance ID**
+- **Server Info**
+- **About DCC MCP**
+
+Instance identity belongs to the MCP server. In embedded mode the first two
+actions read the public `DccServerBase` runtime context. The standalone
+sidecar plugin does not guess identity from environment variables or registry
+files; it directs you to `dcc-mcp-cli list` when that external context is not
+available in the ZBrush process.
+
 ### 4. Health check
 
 Verify the dynamically allocated instance URL:
@@ -154,6 +167,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 - Bundled skills: `zbrush-scripting`, `zbrush-scene`, `zbrush-subtool`, `zbrush-interchange`
 - In-process executor for ZBrush's embedded Python VM
 - Optional socket bridge plugin for sidecar deployments
+- Top-level DCC MCP palette registered through `zbrush.commands`
 - Gateway election compatible with `dcc-mcp-core`
 
 ## Requirements

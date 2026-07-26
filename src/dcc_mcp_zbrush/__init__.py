@@ -13,6 +13,12 @@ from dcc_mcp_zbrush._env import (
     resolve_minimal_mode_enabled,
     resolve_mode,
 )
+from dcc_mcp_zbrush._menu import (
+    copy_instance_id,
+    install_menu,
+    show_about,
+    show_server_info,
+)
 from dcc_mcp_zbrush._skill_loader import (
     MINIMAL_SKILLS,
     STAGE_SKILLS,
@@ -73,6 +79,7 @@ __all__ = [
     "ZBrushServerOptions",
     "build_minimal_mode_config",
     "build_minimal_mode_for_stages",
+    "copy_instance_id",
     "get_active_tool_path",
     "get_bridge",
     "get_server",
@@ -81,10 +88,13 @@ __all__ = [
     "import_zbc",
     "is_zbrush_available",
     "is_zb_available",
+    "install_menu",
     "resolve_enable_gateway_failover",
     "resolve_minimal_mode_enabled",
     "resolve_mode",
     "set_bridge",
+    "show_about",
+    "show_server_info",
     "skills_for_stage",
     "start_server",
     "stop_server",

@@ -3,10 +3,14 @@
 Copy this file into ZStartup/ZPlugs64 or expose it via ZBRUSH_PLUGIN_PATH.
 It listens on TCP port 9876 (override with DCC_MCP_ZBRUSH_SOCKET_PORT) and
 executes JSON-RPC requests against ``zbrush.commands``.
+
+Registers a top-level DCC MCP palette with Copy Instance ID, Server Info, and
+About DCC MCP actions through the official ZBrush Python SDK.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import queue
@@ -14,7 +18,7 @@ import socket
 import threading
 import time
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 _ZBRUSH_REQUEST_LOCK = threading.Lock()
 _CLIENT_READ_SECONDS = 1.0
@@ -368,12 +372,151 @@ def bootstrap_bridge() -> Optional[threading.Thread]:
     host = os.environ.get("DCC_MCP_ZBRUSH_SOCKET_HOST", "127.0.0.1")
     port = _env_int("DCC_MCP_ZBRUSH_SOCKET_PORT", 9876)
     try:
+        if not _install_menu():
+            _mark("menu registration returned false")
+    except BaseException:
+        _mark("menu registration failed\n" + traceback.format_exc())
+    try:
         bridge_thread = _start_bridge(host, port)
     except BaseException:
         _mark("bootstrap failed\n" + traceback.format_exc())
         raise
     _mark(f"bootstrap started {host}:{port}")
     return bridge_thread
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Unified DCC MCP menu actions (PIP-2905)
+# ──────────────────────────────────────────────────────────────────────────────
+# The sidecar plugin must remain self-contained because dcc-mcp-zbrush runs in
+# an external process and may not be importable in ZBrush's embedded VM.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def dcc_mcp_copy_instance_id() -> None:
+    """Copy the DCC MCP instance UUID to the system clipboard."""
+    try:
+        from dcc_mcp_zbrush._menu import copy_instance_id
+
+        copy_instance_id()
+    except ImportError:
+        _fallback_copy_instance_id()
+
+
+def dcc_mcp_show_server_info() -> None:
+    """Show DCC MCP server information."""
+    try:
+        from dcc_mcp_zbrush._menu import show_server_info
+
+        show_server_info()
+    except ImportError:
+        _fallback_server_info()
+
+
+def dcc_mcp_show_about() -> None:
+    """Show About DCC MCP dialog."""
+    try:
+        from dcc_mcp_zbrush._menu import show_about
+
+        show_about()
+    except ImportError:
+        _fallback_about()
+
+
+def _qt_widgets_modules() -> Iterator[Any]:
+    for binding in ("PySide2", "PySide6"):
+        try:
+            yield importlib.import_module(f"{binding}.QtWidgets")
+        except Exception:
+            continue
+
+
+def _show_message(title: str, message: str) -> None:
+    try:
+        _import_zbc().message_ok(message, title)
+        return
+    except Exception:
+        pass
+    for widgets in _qt_widgets_modules():
+        try:
+            widgets.QMessageBox.information(None, title, message)
+            return
+        except Exception:
+            continue
+    print(f"[dcc-mcp-zbrush] {title}\n{message}")  # noqa: T201
+
+
+# ── fallback implementations when dcc-mcp-zbrush is not importable ────────
+
+
+def _fallback_copy_instance_id() -> None:
+    """Fail closed when the external sidecar identity is unavailable."""
+    _show_message(
+        "DCC MCP — Copy Instance ID",
+        "Instance ID is owned by the external MCP server and is unavailable "
+        "inside this standalone plugin. Run `dcc-mcp-cli list` from a terminal.",
+    )
+
+
+def _fallback_server_info() -> None:
+    """Fallback: show server info using available tools."""
+    import sys
+
+    gateway_port = os.environ.get("DCC_MCP_GATEWAY_PORT", "9765")
+
+    try:
+        import zbrush.commands as zbc  # noqa: PLC0415
+
+        zb_version = f"{int(zbc.zbrush_info(0))}.{int(zbc.zbrush_info(1))}"
+    except Exception:
+        zb_version = "unknown"
+
+    msg = (
+        "Instance UUID: unavailable in standalone plugin\n"
+        f"DCC: ZBrush {zb_version}\n"
+        f"ZBrush PID: {os.getpid()}\n"
+        f"Gateway Port: {gateway_port}\n"
+        f"Python: {sys.version.split()[0]}\n\n"
+        "Run `dcc-mcp-cli list` for the external server identity and URL."
+    )
+    _show_message("DCC MCP — Server Info", msg)
+
+
+def _fallback_about() -> None:
+    """Fallback: show about dialog."""
+    msg = (
+        "dcc-mcp-zbrush\nDCC MCP — shared infrastructure for DCC automation.\nhttps://github.com/dcc-mcp/dcc-mcp-zbrush"
+    )
+    _show_message("About DCC MCP", msg)
+
+
+def _on_copy_instance_id(_sender: str) -> None:
+    dcc_mcp_copy_instance_id()
+
+
+def _on_show_server_info(_sender: str) -> None:
+    dcc_mcp_show_server_info()
+
+
+def _on_show_about(_sender: str) -> None:
+    dcc_mcp_show_about()
+
+
+def _install_menu(zbc: Any = None) -> bool:
+    """Install the top-level DCC MCP palette before entering the host pump."""
+    zbc = zbc or _import_zbc()
+    if not zbc.exists("DCC MCP") and not zbc.add_palette("DCC MCP", docking_bar=1):
+        return False
+    actions = (
+        ("Copy Instance ID", "Copy the DCC MCP instance UUID to the clipboard.", _on_copy_instance_id),
+        ("Server Info", "Show DCC MCP server and runtime information.", _on_show_server_info),
+        ("About DCC MCP", "Show adapter and ZBrush version information.", _on_show_about),
+    )
+    for label, info, callback in actions:
+        item_path = f"DCC MCP:{label}"
+        if not zbc.exists(item_path) and not zbc.add_button(item_path, info, callback):
+            return False
+    return True
 
 
 _BRIDGE_BOOTSTRAP = bootstrap_bridge()
