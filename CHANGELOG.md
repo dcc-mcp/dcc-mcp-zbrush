@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.22](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.21...v0.2.22) (2026-07-29)
+
+
+### Features
+
+* add safe high-poly baking workflow ([#60](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/60)) ([7d0f268](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/7d0f26881a4c7f117386f4a54f8bc1def0b40638))
+
 ## [0.2.21](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.20...v0.2.21) (2026-07-29)
 
 
