@@ -90,6 +90,11 @@ def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> 
                 float(params.get("polish", 0)),
                 float(params.get("inflate", 0)),
             )
+        elif method == "remesh_active_subtool":
+            result = _remesh_active_subtool(
+                int(params.get("target_face_count", 100_000)),
+                bool(params.get("duplicate", True)),
+            )
         elif method == "inspect_active_mesh":
             result = _inspect_active_mesh()
         elif method == "bake_active_subtool_map":
@@ -251,6 +256,42 @@ def _refine_active_subtool(
         "subdivision_levels": subdivision_levels,
         "polish": polish,
         "inflate": inflate,
+    }
+
+
+def _remesh_active_subtool(target_face_count: int, duplicate: bool) -> Dict[str, Any]:
+    if not 1_000 <= target_face_count <= 100_000:
+        return {
+            "success": False,
+            "message": "target_face_count must be between 1000 and 100000",
+            "error": "INVALID_TARGET_FACE_COUNT",
+        }
+
+    zbc = _import_zbc()
+    target_control = "Tool:Geometry:ZRemesher:Target Polygons Count"
+    remesh_control = "Tool:Geometry:ZRemesher"
+    duplicate_control = "Tool:SubTool:Duplicate"
+    required = [target_control, remesh_control]
+    if duplicate:
+        required.append(duplicate_control)
+    _require_controls(zbc, *required)
+
+    face_count_before = int(zbc.query_mesh3d(1)[0])
+    started = time.perf_counter()
+    with _quiet_ui_actions(zbc):
+        if duplicate:
+            zbc.press(duplicate_control)
+        zbc.set(target_control, target_face_count / 1000.0)
+        zbc.press(remesh_control)
+    path = str(zbc.get_active_tool_path() or "")
+    return {
+        "active_tool_path": path,
+        "subtool_name": _subtool_name(path),
+        "target_face_count": target_face_count,
+        "face_count_before": face_count_before,
+        "face_count_after": int(zbc.query_mesh3d(1)[0]),
+        "duplicate": duplicate,
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
     }
 
 
@@ -602,10 +643,16 @@ def _capture_turntable(
         return {"success": False, "message": "angles must contain 1 to 72 finite values", "error": "INVALID_ANGLES"}
 
     zbc = _import_zbc()
-    required = ["Document:Export"]
+    required = ["Document:Export", "Transform:Edit"]
     if bpr_render:
         required.append("Render:BPR")
     _require_controls(zbc, *required)
+    if not bool(zbc.get("Transform:Edit")):
+        return {
+            "success": False,
+            "message": "The active tool is not drawn in 3D Edit mode",
+            "error": "EDIT_MODE_REQUIRED",
+        }
     base_transform = [float(value) for value in zbc.get_transform()]
     if len(base_transform) != 9:
         raise RuntimeError("ZBrush returned an invalid tool transform")
