@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.23](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.22...v0.2.23) (2026-07-29)
+
+
+### Features
+
+* **subtool:** add quiet ZRemesher workflow ([#65](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/65)) ([e2bb790](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/e2bb790160a2b9528e7d81f7f14d1d4bd2e0dd5f))
+* **viewport:** capture polyframe turntables ([afc0f10](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/afc0f1065e2a117168b5642e0b95dd7c921a3498))
+
+
+### Documentation
+
+* add ZBrush Dragon showcase ([#62](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/62)) ([ae9efc3](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/ae9efc3a3f64e014a1adfa653bdc9eefbe537f73))
+
 ## [0.2.22](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.21...v0.2.22) (2026-07-29)
 
 
