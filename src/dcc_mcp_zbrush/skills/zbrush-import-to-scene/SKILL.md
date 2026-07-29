@@ -1,7 +1,7 @@
 ---
 name: zbrush-import-to-scene
 description: >-
-  Pipeline skill — import OBJ or FBX asset files into ZBrush as subtools.
+  Pipeline skill — import OBJ asset files into ZBrush as subtools.
   Consumes the dcc-mcp-core asset_import contract (AssetDescriptor) and
   returns an ImportToSceneResult with the imported subtool names. Use when
   you need to bring geometry from disk into the active ZBrush scene.
@@ -14,15 +14,17 @@ metadata:
     layer: domain
     stage: pipeline
     version: "1.0.0"
-    tags: [zbrush, import, obj, fbx, mesh, pipeline, asset-import]
-    search-hint: "import asset, load mesh, bring in obj fbx, asset import pipeline"
+    tags: [zbrush, import, obj, mesh, pipeline, asset-import]
+    search-hint: "import asset, load mesh, bring in obj, asset import pipeline"
     tools: tools.yaml
 ---
 
 # zbrush-import-to-scene
 
-Import OBJ/FBX asset files into ZBrush using the `dcc-mcp-core` asset import
+Import OBJ asset files into ZBrush using the `dcc-mcp-core` asset import
 contract.  The skill validates the `AssetDescriptor`, picks the first
 preferred (or first available) variant, and uses the ZBrush SDK
 `set_next_filename` + `Tool:Import` pattern to load the geometry as a new
 subtool.
+
+FBX import remains interactive in ZBrush and is rejected before host dispatch.

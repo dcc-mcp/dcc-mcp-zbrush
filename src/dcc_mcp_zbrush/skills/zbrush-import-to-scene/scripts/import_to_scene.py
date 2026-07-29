@@ -1,4 +1,4 @@
-"""Import an asset file (OBJ/FBX) into ZBrush using the asset_import contract."""
+"""Import an OBJ asset into ZBrush using the asset_import contract."""
 
 from __future__ import annotations
 
@@ -11,24 +11,26 @@ from dcc_mcp_core.asset_import import (
     AssetFormat,
     AssetImportValidationError,
     ImportToSceneResult,
-    ImportWarning,
-    ImportWarningCode,
     MaterialMode,
 )
 from dcc_mcp_core.skill import skill_entry
 
 from dcc_mcp_zbrush.api import with_zbrush, zb_error, zb_success
 
-_SUPPORTED_FORMATS = {AssetFormat.OBJ, AssetFormat.FBX}
+_SUPPORTED_FORMATS = {AssetFormat.OBJ, AssetFormat.UNKNOWN}
+
+
+def _is_supported_variant(variant: AssetFileVariant) -> bool:
+    return variant.format in _SUPPORTED_FORMATS and os.path.splitext(variant.local_path)[1].lower() == ".obj"
 
 
 def _pick_variant(variants: List[AssetFileVariant]) -> Optional[AssetFileVariant]:
     """Return the preferred variant, or the first supported one, or the first available."""
     for v in variants:
-        if v.preferred and v.format in _SUPPORTED_FORMATS:
+        if v.preferred and _is_supported_variant(v):
             return v
     for v in variants:
-        if v.format in _SUPPORTED_FORMATS:
+        if _is_supported_variant(v):
             return v
     return variants[0] if variants else None
 
@@ -92,18 +94,14 @@ def import_to_scene(
             prompt="Add at least one variant with a non-empty local_path.",
         )
 
-    warnings: List[ImportWarning] = []
-    if variant.format not in _SUPPORTED_FORMATS:
-        warnings.append(
-            ImportWarning(
-                code=ImportWarningCode.UNSUPPORTED_FEATURE,
-                message=(
-                    f"Format '{variant.format}' is not natively supported by the ZBrush SDK import path; "
-                    "attempting import anyway — results may vary."
-                ),
-            )
+    if not _is_supported_variant(variant):
+        return zb_error(
+            "Only OBJ files can be imported without opening an interactive ZBrush dialog.",
+            "UNSUPPORTED_FORMAT",
+            prompt="Convert the asset to OBJ, then call import_to_scene again.",
         )
 
+    warnings = []
     payload = run_in_zbrush(
         lambda zbc: _import(zbc, variant.local_path),
         "import_to_scene",
