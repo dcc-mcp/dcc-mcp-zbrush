@@ -120,6 +120,40 @@ def test_socket_bridge_transport_failure_clears_connection(monkeypatch):
     assert bridge.is_connected() is False
 
 
+def test_bridge_busy_error_remains_retryable_at_tool_boundary(monkeypatch):
+    from dcc_mcp_zbrush import api
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    bridge._connected = True
+    response = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+            "code": -32001,
+            "message": "ZBrush bridge is busy with execute_python",
+            "data": {"retryable": True, "active_method": "execute_python"},
+        },
+    }
+    monkeypatch.setattr(bridge, "_send", lambda _data: json.dumps(response).encode("utf-8"))
+
+    with pytest.raises(ZBrushBridgeError) as caught:
+        bridge.call("get_scene_info")
+    assert caught.value.code == -32001
+    assert caught.value.data == {"retryable": True, "active_method": "execute_python"}
+
+    monkeypatch.setattr(api, "_bridge", bridge)
+
+    @api.with_zbrush
+    def call_busy(**_kwargs):
+        return api.get_bridge().call("get_scene_info")
+
+    result = call_busy()
+    assert result["error"] == "ZBRUSH_BUSY"
+    assert result["context"]["retryable"] is True
+    assert result["context"]["active_method"] == "execute_python"
+
+
 def test_sidecar_retains_bridge_when_initial_connect_fails():
     from dcc_mcp_zbrush.server import ZBrushMcpServer
 

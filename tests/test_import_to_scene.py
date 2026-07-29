@@ -59,9 +59,8 @@ class TestImportToSceneSkill:
         mock_zbc = MagicMock()
         mock_zbc.get_active_tool_path.return_value = active_path
         mock_zbc.exists.return_value = True
-        mock_zbc.is_enabled.return_value = True
+        mock_zbc.is_enabled.side_effect = lambda path: path == "Tool:SubTool:Duplicate"
         mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
-        mock_zbc.freeze.side_effect = lambda action: action()
         return mock_zbc
 
     def test_successful_obj_import(self, tmp_path) -> None:
@@ -69,6 +68,10 @@ class TestImportToSceneSkill:
         asset_file.write_text("# obj placeholder")
 
         mock_zbc = self._make_mock_zbc("/ZBrush/desk.ZTL")
+        lower_res_enabled = iter((True, True, False))
+        mock_zbc.is_enabled.side_effect = lambda path: (
+            next(lower_res_enabled) if path == "Tool:Geometry:Lower Res" else True
+        )
         mod = _load_script("import_to_scene.py")
 
         with patch(
@@ -86,9 +89,12 @@ class TestImportToSceneSkill:
         mock_zbc.set_next_filename.assert_called_once()
         assert mock_zbc.press.call_args_list == [
             call("Tool:SubTool:Duplicate"),
+            call("Tool:Geometry:Lower Res"),
+            call("Tool:Geometry:Lower Res"),
+            call("Tool:Geometry:Del Higher"),
             call("Tool:Import"),
         ]
-        assert mock_zbc.freeze.call_count == 1
+        mock_zbc.freeze.assert_not_called()
         extra = result["context"]["extra"]
         assert (extra["subtool_count_before"], extra["subtool_count_after"]) == (1, 2)
 

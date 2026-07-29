@@ -15,11 +15,22 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9876
-DEFAULT_TIMEOUT_SEC = 120.0
+DEFAULT_TIMEOUT_SEC = 610.0
 
 
 class ZBrushBridgeError(RuntimeError):
     """Raised when a bridge RPC call fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Optional[int] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.data = dict(data or {})
 
 
 class ZBrushNotAvailableError(ConnectionError):
@@ -72,7 +83,13 @@ class SocketBridge:
 
         if "error" in message:
             err = message["error"]
-            raise ZBrushBridgeError(str(err.get("message", err)))
+            if not isinstance(err, dict):
+                raise ZBrushBridgeError(str(err))
+            raise ZBrushBridgeError(
+                str(err.get("message", err)),
+                code=err.get("code") if isinstance(err.get("code"), int) else None,
+                data=err.get("data") if isinstance(err.get("data"), dict) else None,
+            )
         return message.get("result")
 
     def execute_python(self, code: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

@@ -26,9 +26,11 @@ from typing import Any, Callable, Dict, Iterator, Optional
 _ZBRUSH_REQUEST_LOCK = threading.Lock()
 _CLIENT_READ_SECONDS = 1.0
 _UI_POLL_SECONDS = 0.02
-_REQUEST_TIMEOUT_SECONDS = 120.0
+_REQUEST_TIMEOUT_SECONDS = 600.0
 _REQUEST_QUEUE: "queue.Queue[Dict[str, Any]]" = queue.Queue()
 _BRIDGE_THREAD: Optional[threading.Thread] = None
+_REQUEST_STATE_LOCK = threading.Lock()
+_ACTIVE_REQUEST: Optional[Dict[str, Any]] = None
 
 
 def _mark(message: str) -> None:
@@ -54,7 +56,14 @@ def _handle_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     req_id = payload.get("id", 0)
 
     if method == "ping":
-        return {"jsonrpc": "2.0", "id": req_id, "result": {"ok": True}}
+        with _REQUEST_STATE_LOCK:
+            active = _ACTIVE_REQUEST
+            active_method = active["payload"].get("method") if active else None
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"ok": True, "busy": active is not None, "active_method": active_method},
+        }
 
     with _ZBRUSH_REQUEST_LOCK:
         return _handle_zbrush_request(method, params, req_id)
@@ -80,6 +89,17 @@ def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> 
                 int(params.get("subdivision_levels", 1)),
                 float(params.get("polish", 0)),
                 float(params.get("inflate", 0)),
+            )
+        elif method == "inspect_active_mesh":
+            result = _inspect_active_mesh()
+        elif method == "bake_active_subtool_map":
+            result = _bake_active_subtool_map(
+                str(params.get("map_type", "")),
+                str(params.get("output_path", "")),
+                int(params.get("width", 2048)),
+                int(params.get("height", 2048)),
+                bool(params.get("smooth", True)),
+                int(params.get("border", 8)),
             )
         elif method == "create_wrinkle_brush":
             result = _create_wrinkle_brush(str(params.get("output_path", "")))
@@ -132,7 +152,7 @@ def _quiet_ui_actions(zbc: Any) -> Iterator[None]:
 
 def _run_quiet_ui(zbc: Any, action: Callable[[], None]) -> None:
     with _quiet_ui_actions(zbc):
-        zbc.freeze(action)
+        action()
 
 
 def _subtool_name(path: str) -> str:
@@ -231,6 +251,179 @@ def _refine_active_subtool(
         "polish": polish,
         "inflate": inflate,
     }
+
+
+def _inspect_active_mesh() -> Dict[str, Any]:
+    zbc = _import_zbc()
+    uv_bounds = [float(value) for value in zbc.query_mesh3d(3)]
+    has_uvs = len(uv_bounds) == 4 and uv_bounds[2] > uv_bounds[0] and uv_bounds[3] > uv_bounds[1]
+    path = str(zbc.get_active_tool_path() or "")
+    return {
+        "active_tool_path": path,
+        "subtool_name": _subtool_name(path),
+        "point_count": int(zbc.query_mesh3d(0)[0]),
+        "face_count": int(zbc.query_mesh3d(1)[0]),
+        "bounds": [float(value) for value in zbc.query_mesh3d(2)],
+        "uv_bounds": uv_bounds,
+        "has_uvs": has_uvs,
+        "mesh_area": float(zbc.query_mesh3d(8)[0]),
+        "solid": bool(zbc.is_polymesh3d_solid()),
+    }
+
+
+def _bake_active_subtool_map(
+    map_type: str,
+    output_path: str,
+    width: int,
+    height: int,
+    smooth: bool,
+    border: int,
+) -> Dict[str, Any]:
+    normalized_type = map_type.strip().lower()
+    if normalized_type not in {"normal", "displacement"}:
+        return {
+            "success": False,
+            "message": "map_type must be normal or displacement",
+            "error": "UNSUPPORTED_MAP_TYPE",
+            "map_type": normalized_type,
+            "output_path": output_path,
+        }
+    if not output_path:
+        return {"success": False, "message": "output_path must not be empty", "error": "OUTPUT_PATH_MISSING"}
+    abs_path = os.path.abspath(output_path)
+    if os.path.splitext(abs_path)[1].lower() not in {".tif", ".tiff"}:
+        return {
+            "success": False,
+            "message": "Baked maps must use a .tif or .tiff output path",
+            "error": "UNSUPPORTED_FORMAT",
+            "output_path": abs_path,
+        }
+    directory = os.path.dirname(abs_path)
+    if directory and not os.path.isdir(directory):
+        return {
+            "success": False,
+            "message": f"Output directory does not exist: {directory}",
+            "error": "OUTPUT_DIR_MISSING",
+            "output_path": abs_path,
+        }
+    if width != height:
+        return {
+            "success": False,
+            "message": "ZBrush native map baking requires equal width and height",
+            "error": "NON_SQUARE_MAP",
+            "output_path": abs_path,
+        }
+    if not (256 <= width <= 8192) or width & (width - 1):
+        return {
+            "success": False,
+            "message": "width and height must be the same power of two between 256 and 8192",
+            "error": "INVALID_MAP_SIZE",
+            "output_path": abs_path,
+        }
+    if not 0 <= border <= 16:
+        return {
+            "success": False,
+            "message": "border must be between 0 and 16",
+            "error": "INVALID_BORDER",
+            "output_path": abs_path,
+        }
+
+    zbc = _import_zbc()
+    uv_bounds = [float(value) for value in zbc.query_mesh3d(3)]
+    if len(uv_bounds) != 4 or uv_bounds[2] <= uv_bounds[0] or uv_bounds[3] <= uv_bounds[1]:
+        return {
+            "success": False,
+            "message": "The active subtool has no usable UVs",
+            "error": "UVS_MISSING",
+            "map_type": normalized_type,
+            "output_path": abs_path,
+            "uv_bounds": uv_bounds,
+        }
+
+    map_size_control = "Tool:UV Map:UV Map Size"
+    map_border_control = "Tool:UV Map:UV Map Border"
+    controls = (
+        {
+            "create": "Tool:Normal Map:Create NormalMap",
+            "clone": "Tool:Normal Map:Clone NM",
+            "export": "Texture:Export",
+            "smooth": "Tool:Normal Map:SmoothUV",
+            "tangent": "Tool:Normal Map:Tangent",
+        }
+        if normalized_type == "normal"
+        else {
+            "create": "Tool:Displacement Map:Create DispMap",
+            "clone": "Tool:Displacement Map:Clone Disp",
+            "export": "Alpha:Export",
+            "smooth": "Tool:Displacement Map:SmoothUV",
+        }
+    )
+    setting_controls = [map_size_control, map_border_control, controls["smooth"]]
+    tangent_control = controls.get("tangent")
+    if tangent_control:
+        setting_controls.append(tangent_control)
+    _require_controls(zbc, controls["create"], controls["clone"], controls["export"], *setting_controls)
+    saved_settings = {path: zbc.get(path) for path in setting_controls}
+    stem, extension = os.path.splitext(os.path.basename(abs_path))
+    stage_path = os.path.join(directory, f".{stem}-{os.getpid()}-{time.time_ns()}{extension}")
+    map_created = False
+
+    def bake_and_export() -> None:
+        nonlocal map_created
+        lowered = 0
+        try:
+            zbc.set(map_size_control, width)
+            zbc.set(map_border_control, border)
+            zbc.set(controls["smooth"], int(smooth))
+            if tangent_control:
+                zbc.set(tangent_control, 1)
+            while zbc.exists("Tool:Geometry:Lower Res") and zbc.is_enabled("Tool:Geometry:Lower Res"):
+                zbc.press("Tool:Geometry:Lower Res")
+                lowered += 1
+            zbc.press(controls["create"])
+            if not zbc.is_enabled(controls["clone"]):
+                return
+            zbc.press(controls["clone"])
+            zbc.set_next_filename(stage_path)
+            zbc.press(controls["export"])
+            map_created = True
+        finally:
+            try:
+                for _ in range(lowered):
+                    if not zbc.exists("Tool:Geometry:Higher Res") or not zbc.is_enabled("Tool:Geometry:Higher Res"):
+                        raise RuntimeError("ZBrush could not restore the original subdivision level")
+                    zbc.press("Tool:Geometry:Higher Res")
+            finally:
+                for item_path, value in saved_settings.items():
+                    zbc.set(item_path, value)
+
+    try:
+        _run_quiet_ui(zbc, bake_and_export)
+        if not map_created:
+            return {
+                "success": False,
+                "message": "ZBrush did not create a baked map from the active subdivision stack",
+                "error": "MAP_NOT_CREATED",
+                "map_type": normalized_type,
+                "output_path": abs_path,
+                "uv_bounds": uv_bounds,
+            }
+        if not os.path.isfile(stage_path) or os.path.getsize(stage_path) == 0:
+            raise RuntimeError("ZBrush did not export a non-empty baked map")
+        os.replace(stage_path, abs_path)
+        return {
+            "map_type": normalized_type,
+            "output_path": abs_path,
+            "bytes": os.path.getsize(abs_path),
+            "width": width,
+            "height": height,
+            "smooth": smooth,
+            "border": border,
+            "uv_bounds": uv_bounds,
+        }
+    finally:
+        if os.path.isfile(stage_path):
+            os.remove(stage_path)
 
 
 _WRINKLE_SETTINGS = {
@@ -492,6 +685,10 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
             if int(zbc.get_subtool_count()) != subtool_count_before + 1:
                 duplicate_failed = True
                 return
+            while zbc.exists("Tool:Geometry:Lower Res") and zbc.is_enabled("Tool:Geometry:Lower Res"):
+                zbc.press("Tool:Geometry:Lower Res")
+            if zbc.exists("Tool:Geometry:Del Higher") and zbc.is_enabled("Tool:Geometry:Del Higher"):
+                zbc.press("Tool:Geometry:Del Higher")
         zbc.set_next_filename(abs_path)
         zbc.press("Tool:Import")
 
@@ -538,6 +735,13 @@ def _execute_python(code: str, context: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _route_request(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep bridge health responsive without touching the ZBrush SDK."""
+    if payload.get("method") == "ping":
+        return _handle_request(payload)
+    return _dispatch_request(payload)
+
+
 def _serve_client(conn: socket.socket) -> None:
     with conn:
         conn.settimeout(_CLIENT_READ_SECONDS)
@@ -549,21 +753,46 @@ def _serve_client(conn: socket.socket) -> None:
             data += chunk
         line = data.split(b"\n", 1)[0]
         payload = json.loads(line.decode("utf-8"))
-        response = _dispatch_request(payload)
+        response = _route_request(payload)
         conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
 
 
 def _dispatch_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Queue host API work for the ZBrush main thread and await its response."""
+    global _ACTIVE_REQUEST
+
     pending: Dict[str, Any] = {"payload": payload, "event": threading.Event()}
+    with _REQUEST_STATE_LOCK:
+        if _ACTIVE_REQUEST is not None:
+            active_method = _ACTIVE_REQUEST["payload"].get("method")
+            return {
+                "jsonrpc": "2.0",
+                "id": payload.get("id", 0),
+                "error": {
+                    "code": -32001,
+                    "message": f"ZBrush bridge is busy with {active_method}",
+                    "data": {"retryable": True, "active_method": active_method},
+                },
+            }
+        _ACTIVE_REQUEST = pending
     _REQUEST_QUEUE.put(pending)
     if not pending["event"].wait(_REQUEST_TIMEOUT_SECONDS):
-        raise TimeoutError("Timed out waiting for ZBrush main-thread dispatch")
+        return {
+            "jsonrpc": "2.0",
+            "id": payload.get("id", 0),
+            "error": {
+                "code": -32002,
+                "message": "Timed out waiting for ZBrush; the accepted request may still be running",
+                "data": {"retryable": False, "still_running": True, "active_method": payload.get("method")},
+            },
+        }
     return pending["response"]
 
 
 def _drain_request_queue() -> None:
     """Run queued ZBrush SDK calls from the host's main-thread pump."""
+    global _ACTIVE_REQUEST
+
     while True:
         try:
             pending = _REQUEST_QUEUE.get_nowait()
@@ -572,6 +801,9 @@ def _drain_request_queue() -> None:
         try:
             pending["response"] = _handle_request(pending["payload"])
         finally:
+            with _REQUEST_STATE_LOCK:
+                if _ACTIVE_REQUEST is pending:
+                    _ACTIVE_REQUEST = None
             pending["event"].set()
 
 
