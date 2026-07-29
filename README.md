@@ -56,6 +56,12 @@ ZBrush adapter for the [DCC Model Context Protocol](https://github.com/dcc-mcp/d
 
 > **Requires ZBrush 2026.1+** with the official [Python SDK](https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html) (CPython 3.11 embedded in ZBrush).
 
+## Showcase
+
+![Typed ZBrush workflow validating a five-million-face Fantasy Dragon before OBJ export](docs/images/zbrush-fantasy-dragon-showcase.png)
+
+Real ZBrush 2026 evidence from a typed, quiet high-poly workflow: **2,499,970 points / 5,000,000 faces**, inspected and exported as the active Dragon subtool. Fantasy Dragon model by [Artec 3D](https://www.artec3d.com/3d-models/fantasy-dragon), used under CC BY 4.0; the source model is not included in this repository. See the [full workflow and copyable prompt](https://dcc-mcp.github.io/showcase#zbrush-fantasy-dragon).
+
 ## Quick install
 
 ### 1. Install the Python package
