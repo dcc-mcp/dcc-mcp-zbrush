@@ -1,7 +1,7 @@
 tools:
   - name: import_to_scene
     description: >-
-      Import an asset (OBJ or FBX) into ZBrush as a new subtool.
+      Import an OBJ asset into ZBrush as a new subtool.
       Accepts an AssetDescriptor-shaped payload (asset_id + variants with
       local_path/format fields). Returns an ImportToSceneResult with the
       list of imported subtool names and any non-fatal warnings.
@@ -32,7 +32,8 @@ tools:
                 description: Absolute or relative path to the asset file on disk.
               format:
                 type: string
-                description: "File format hint: obj, fbx, etc. Defaults to unknown."
+                enum: [obj]
+                description: "File format hint. Only obj supports unattended import."
               preferred:
                 type: boolean
                 description: Whether this variant is preferred for import.

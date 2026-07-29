@@ -223,7 +223,6 @@ def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
 
 
 def _import_to_scene(file_path: str) -> Dict[str, Any]:
-    zbc = _import_zbc()
     if not file_path:
         return {
             "success": False,
@@ -232,6 +231,13 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
             "imported_nodes": [],
         }
     abs_path = os.path.abspath(file_path)
+    if os.path.splitext(abs_path)[1].lower() != ".obj":
+        return {
+            "success": False,
+            "message": "Only OBJ files can be imported without opening an interactive ZBrush dialog.",
+            "error": "UNSUPPORTED_FORMAT",
+            "imported_nodes": [],
+        }
     if not os.path.isfile(abs_path):
         return {
             "success": False,
@@ -239,6 +245,7 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
             "error": "FILE_NOT_FOUND",
             "imported_nodes": [],
         }
+    zbc = _import_zbc()
     subtool_count_before = int(zbc.get_subtool_count())
     zbc.set_next_filename(abs_path)
     zbc.press("Tool:Import")

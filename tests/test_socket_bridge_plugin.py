@@ -212,3 +212,15 @@ def test_bridge_dispatches_refine_active_subtool_on_host_thread() -> None:
         call("Tool:Deformation:Polish", 8.0),
         call("Tool:Deformation:Inflate", 0.5),
     ]
+
+
+def test_bridge_rejects_fbx_before_importing_zbrush_commands(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    asset_file = tmp_path / "asset.fbx"
+    asset_file.write_bytes(b"fbx")
+    bridge._import_zbc = MagicMock()
+
+    result = bridge._import_to_scene(str(asset_file))
+
+    assert result["error"] == "UNSUPPORTED_FORMAT"
+    bridge._import_zbc.assert_not_called()

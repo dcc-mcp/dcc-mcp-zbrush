@@ -82,25 +82,23 @@ class TestImportToSceneSkill:
         mock_zbc.set_next_filename.assert_called_once()
         mock_zbc.press.assert_called_once_with("Tool:Import")
 
-    def test_successful_fbx_import(self, tmp_path) -> None:
+    def test_fbx_path_is_rejected_before_host_dispatch(self, tmp_path) -> None:
         asset_file = tmp_path / "chair.fbx"
         asset_file.write_text("# fbx placeholder")
 
-        mock_zbc = self._make_mock_zbc("/ZBrush/chair.ZTL")
         mod = _load_script("import_to_scene.py")
+        run_in_zbrush = MagicMock()
 
-        with patch(
-            "dcc_mcp_zbrush._skill_host.run_in_zbrush",
-            lambda embedded, *_a, **_k: embedded(mock_zbc),
-        ):
+        with patch("dcc_mcp_zbrush._skill_host.run_in_zbrush", run_in_zbrush):
             with patch("dcc_mcp_zbrush.api.with_zbrush", lambda f: f):
                 result = mod.import_to_scene(
                     asset_id="arch/chair",
-                    variants=[{"local_path": str(asset_file), "format": "fbx"}],
+                    variants=[{"local_path": str(asset_file), "format": "obj"}],
                 )
 
-        assert result["success"] is True
-        assert result["context"]["extra"]["asset_id"] == "arch/chair"
+        assert result["success"] is False
+        assert result["error"] == "UNSUPPORTED_FORMAT"
+        run_in_zbrush.assert_not_called()
 
     def test_file_not_found_returns_error(self) -> None:
         mod = _load_script("import_to_scene.py")
@@ -137,7 +135,7 @@ class TestImportToSceneSkill:
         preferred = tmp_path / "high.fbx"
         preferred.write_text("# high")
 
-        mock_zbc = self._make_mock_zbc("/ZBrush/high.ZTL")
+        mock_zbc = self._make_mock_zbc("/ZBrush/low.ZTL")
         mod = _load_script("import_to_scene.py")
         captured: list = []
 
@@ -157,11 +155,11 @@ class TestImportToSceneSkill:
                 )
 
         assert result["success"] is True
-        # The preferred FBX variant should have been imported
+        # Interactive FBX is skipped in favor of the unattended OBJ path.
         call_args = mock_zbc.set_next_filename.call_args[0][0]
-        assert "high.fbx" in call_args
+        assert "low.obj" in call_args
 
-    def test_unsupported_format_adds_warning(self, tmp_path) -> None:
+    def test_unsupported_format_returns_error(self, tmp_path) -> None:
         asset_file = tmp_path / "scene.usd"
         asset_file.write_text("# usd placeholder")
 
@@ -178,7 +176,6 @@ class TestImportToSceneSkill:
                     variants=[{"local_path": str(asset_file), "format": "usd"}],
                 )
 
-        # Should still attempt import but with a warning
-        assert result["success"] is True
-        warnings = result["context"].get("warnings", [])
-        assert any(w["code"] == "unsupported_feature" for w in warnings)
+        assert result["success"] is False
+        assert result["error"] == "UNSUPPORTED_FORMAT"
+        mock_zbc.press.assert_not_called()
