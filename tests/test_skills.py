@@ -184,6 +184,31 @@ def test_inspect_active_mesh_returns_machine_comparable_metrics() -> None:
     assert result["context"]["bounds"] == [-1.0, -2.0, -3.0, 1.0, 2.0, 3.0]
 
 
+def test_remesh_active_subtool_duplicates_and_reports_face_counts() -> None:
+    mod = _load_script("zbrush-subtool", "remesh_active_subtool.py")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.query_mesh3d.side_effect = ([5_000_000.0], [48_672.0])
+    mock_zbc.get_active_tool_path.return_value = "/ZBrush/Fantasy Dragon remeshed"
+
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.remesh_active_subtool(target_face_count=50_000, duplicate=True)
+
+    assert result["success"] is True
+    assert result["context"]["face_count_before"] == 5_000_000
+    assert result["context"]["face_count_after"] == 48_672
+    assert result["context"]["target_face_count"] == 50_000
+    assert mock_zbc.press.call_args_list == [
+        call("Tool:SubTool:Duplicate"),
+        call("Tool:Geometry:ZRemesher"),
+    ]
+    mock_zbc.set.assert_called_once_with("Tool:Geometry:ZRemesher:Target Polygons Count", 50.0)
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
 def test_bake_active_subtool_map_reports_missing_uvs(tmp_path) -> None:
     mod = _load_script("zbrush-subtool", "bake_active_subtool_map.py")
     mock_zbc = MagicMock()
@@ -303,6 +328,7 @@ def test_capture_turntable_exports_frames_and_restores_transform(tmp_path) -> No
     mod = _load_script("zbrush-viewport", "capture_turntable.py")
     mock_zbc = MagicMock()
     mock_zbc.exists.return_value = True
+    mock_zbc.get.return_value = 1
     base_transform = [480.0, 360.0, 0.0, 300.0, 300.0, 300.0, 5.0, 10.0, 175.0]
     mock_zbc.get_transform.return_value = base_transform
     state: dict[str, str] = {}
@@ -332,6 +358,23 @@ def test_capture_turntable_exports_frames_and_restores_transform(tmp_path) -> No
     assert [item.args[0] for item in mock_zbc.press_key.call_args_list] == ["SHIFT+F", "SHIFT+F"]
     assert all(callable(item.args[1]) for item in mock_zbc.press_key.call_args_list)
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
+def test_capture_turntable_rejects_capture_outside_edit_mode(tmp_path) -> None:
+    mod = _load_script("zbrush-viewport", "capture_turntable.py")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.get.return_value = 0
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.capture_turntable(output_dir=str(tmp_path), angles=[0])
+
+    assert result["success"] is False
+    assert result["error"] == "EDIT_MODE_REQUIRED"
+    mock_zbc.get_transform.assert_not_called()
+    mock_zbc.set_next_filename.assert_not_called()
 
 
 def test_capture_turntable_restores_polyframe_after_export_failure(tmp_path) -> None:

@@ -65,6 +65,41 @@ tools:
         - zbrush_subtool__bake_active_subtool_map
       on-failure:
         - zbrush_scene__get_scene_info
+  - name: remesh_active_subtool
+    description: >-
+      Duplicate the active subtool by default, run native ZRemesher toward a
+      bounded target face count, and report before/after counts plus elapsed
+      time. Use to create a lower-density copy for export or readable
+      PolyFrame evidence while preserving the source mesh.
+    source_file: scripts/remesh_active_subtool.py
+    execution: sync
+    job_strategy: monolithic
+    affinity: any
+    enforce_thread_affinity: true
+    timeout_hint_secs: 600
+    group: core
+    annotations:
+      destructive_hint: true
+      read_only_hint: false
+      idempotent_hint: false
+    input_schema:
+      type: object
+      properties:
+        target_face_count:
+          type: integer
+          minimum: 1000
+          maximum: 100000
+          default: 100000
+          description: Approximate ZRemesher target face count.
+        duplicate:
+          type: boolean
+          default: true
+          description: Duplicate the active subtool before remeshing it.
+    next-tools:
+      on-success:
+        - zbrush_subtool__inspect_active_mesh
+      on-failure:
+        - zbrush_scene__get_scene_info
   - name: refine_active_subtool
     description: >-
       Subdivide the active subtool and optionally apply Polish and Inflate
