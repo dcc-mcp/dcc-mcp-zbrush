@@ -104,12 +104,12 @@ Auto-detection logic (`_env.resolve_mode`): try `embedded` first; if `zbrush.com
 from dcc_mcp_core import DccCapabilities
 
 caps = DccCapabilities(
-    has_embedded_python=True,       # ZBrush 2026.1+ primary
-    bridge_kind="socket",           # sidecar fallback (TCP JSON-RPC)
+    has_embedded_python=True,  # ZBrush 2026.1+ primary
+    bridge_kind="socket",  # sidecar fallback (TCP JSON-RPC)
     bridge_endpoint="127.0.0.1:9876",
     scene_info=True,
     file_operations=True,
-    snapshot=False,                 # render deferred
+    snapshot=False,  # render deferred
 )
 ```
 
@@ -415,5 +415,5 @@ Follows the same `release-please` workflow as `dcc-mcp-core` and `dcc-mcp-maya`.
 ## 12. Open Questions
 
 1. **FBX export**: Does `zbrush.commands` expose FBX export, or is a separate script needed? → Currently only OBJ export via `Tool:Export` button press.
-2. **Concurrent access**: ZBrush's Python VM is single-threaded for scene operations. Sidecar connections may use separate threads, but bridge requests that touch the SDK are serialized.
+2. **Concurrent access**: ZBrush's Python VM is single-threaded for scene operations. The bridge admits one SDK request at a time, rejects parallel work as busy, keeps timed-out requests reserved until host completion, and answers `ping` off the SDK thread.
 3. **ZBrush version probing**: `zbrush_info()` returns `(major, minor)`. Need to validate the exact version string format in 2026.1+ SDK releases.

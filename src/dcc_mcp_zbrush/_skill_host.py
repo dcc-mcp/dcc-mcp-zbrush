@@ -20,9 +20,9 @@ def quiet_ui_actions(zbc: Any) -> Iterator[None]:
 
 
 def run_quiet_ui(zbc: Any, action: Callable[[], None]) -> None:
-    """Run file-oriented UI commands without action drawing or UI redraws."""
+    """Run file-oriented UI commands without scripted action feedback."""
     with quiet_ui_actions(zbc):
-        zbc.freeze(action)
+        action()
 
 
 def subtool_name_from_path(path: str) -> str:
@@ -30,7 +30,13 @@ def subtool_name_from_path(path: str) -> str:
     return ntpath.basename(path)
 
 
-def run_in_zbrush(embedded: Callable[[Any], _T], bridge_method: str, **bridge_params: Any) -> _T:
+def run_in_zbrush(
+    embedded: Callable[[Any], _T],
+    bridge_method: str,
+    *,
+    allow_domain_failure: bool = False,
+    **bridge_params: Any,
+) -> _T:
     """Execute ``embedded(zbc)`` in-process or forward to the sidecar socket plugin."""
     from dcc_mcp_zbrush._version_probe import is_zbrush_available  # noqa: PLC0415
 
@@ -42,7 +48,7 @@ def run_in_zbrush(embedded: Callable[[Any], _T], bridge_method: str, **bridge_pa
     from dcc_mcp_zbrush.api import get_bridge  # noqa: PLC0415
 
     result = get_bridge().call(bridge_method, **bridge_params)
-    if isinstance(result, dict) and result.get("success") is False:
+    if isinstance(result, dict) and result.get("success") is False and not allow_domain_failure:
         raise RuntimeError(result.get("error", "bridge call failed"))
     return result  # type: ignore[return-value]
 

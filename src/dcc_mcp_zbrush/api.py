@@ -6,6 +6,8 @@ import functools
 import logging
 from typing import Any, Callable, List, Optional, TypeVar
 
+from dcc_mcp_zbrush.bridge import ZBrushBridgeError
+
 logger = logging.getLogger(__name__)
 
 _F = TypeVar("_F", bound=Callable[..., Any])
@@ -105,6 +107,18 @@ def with_zbrush(func: _F) -> _F:
                     "Copy bridge/plugin/mcp_socket_bridge.py into ZStartup/ZPlugs64",
                     "Set DCC_MCP_ZBRUSH_MODE=embedded when running inside ZBrush",
                 ],
+            )
+        except ZBrushBridgeError as exc:
+            error_code = {
+                -32001: "ZBRUSH_BUSY",
+                -32002: "ZBRUSH_TIMEOUT_STILL_RUNNING",
+            }.get(exc.code, "ZBRUSH_BRIDGE_ERROR")
+            return zb_error(
+                str(exc),
+                error_code,
+                prompt="Wait for the active ZBrush operation to finish before retrying.",
+                bridge_code=exc.code,
+                **exc.data,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Skill execution failed: %s", func.__name__)

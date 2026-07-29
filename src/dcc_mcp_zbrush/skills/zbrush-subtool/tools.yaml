@@ -45,6 +45,26 @@ tools:
     next-tools:
       on-success:
         - zbrush_interchange__export_active_subtool_obj
+  - name: inspect_active_mesh
+    description: >-
+      Read machine-comparable metrics for the active mesh: point and face
+      counts, XYZ and UV bounds, mesh area, and solid state. Does not modify
+      the scene.
+    source_file: scripts/inspect_active_mesh.py
+    execution: sync
+    affinity: any
+    group: diagnostics
+    annotations:
+      read_only_hint: true
+      idempotent_hint: true
+    input_schema:
+      type: object
+      properties: {}
+    next-tools:
+      on-success:
+        - zbrush_subtool__bake_active_subtool_map
+      on-failure:
+        - zbrush_scene__get_scene_info
   - name: refine_active_subtool
     description: >-
       Subdivide the active subtool and optionally apply Polish and Inflate
@@ -84,3 +104,57 @@ tools:
         - zbrush_interchange__export_active_subtool_obj
       on-failure:
         - zbrush_scene__get_scene_info
+  - name: bake_active_subtool_map
+    description: >-
+      Create and atomically export one normal or displacement map from the
+      active subtool. Requires usable UVs, writes TIFF, suppresses scripted
+      action feedback, and fails without replacing an existing output.
+    source_file: scripts/bake_active_subtool_map.py
+    execution: sync
+    job_strategy: monolithic
+    affinity: any
+    enforce_thread_affinity: true
+    timeout_hint_secs: 600
+    group: core
+    annotations:
+      destructive_hint: true
+      read_only_hint: false
+      idempotent_hint: true
+    input_schema:
+      type: object
+      required: [map_type, output_path]
+      properties:
+        map_type:
+          type: string
+          enum: [normal, displacement]
+          description: Type of map to bake.
+        output_path:
+          type: string
+          description: Existing-directory .tif or .tiff output path.
+        width:
+          type: integer
+          minimum: 256
+          maximum: 8192
+          default: 2048
+          description: Square output size in pixels; must be a power of two.
+        height:
+          type: integer
+          minimum: 256
+          maximum: 8192
+          default: 2048
+          description: Must equal width.
+        smooth:
+          type: boolean
+          default: true
+          description: Smooth the generated map.
+        border:
+          type: integer
+          minimum: 0
+          maximum: 16
+          default: 8
+          description: UV seam padding in pixels.
+    next-tools:
+      on-success:
+        - zbrush_interchange__export_active_subtool_obj
+      on-failure:
+        - zbrush_subtool__inspect_active_mesh

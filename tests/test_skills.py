@@ -75,15 +75,29 @@ def test_quiet_ui_actions_restore_feedback_and_normalize_subtool_paths() -> None
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
 
     action = MagicMock()
-    mock_zbc.freeze.side_effect = lambda callback: callback()
     mock_zbc.show_actions.reset_mock()
     run_quiet_ui(mock_zbc, action)
 
     action.assert_called_once_with()
-    mock_zbc.freeze.assert_called_once_with(action)
+    mock_zbc.freeze.assert_not_called()
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
     assert subtool_name_from_path(r"F:\models\horse_statue_01") == "horse_statue_01"
     assert subtool_name_from_path("/ZBrush/marble_bust_01") == "marble_bust_01"
+
+
+def test_run_in_zbrush_can_return_a_domain_failure() -> None:
+    from dcc_mcp_zbrush._skill_host import run_in_zbrush
+
+    failure = {"success": False, "error": "UVS_MISSING", "uv_bounds": [0.0, 0.0, 0.0, 0.0]}
+    bridge = MagicMock()
+    bridge.call.return_value = failure
+    with (
+        patch("dcc_mcp_zbrush._version_probe.is_zbrush_available", return_value=False),
+        patch("dcc_mcp_zbrush.api.get_bridge", return_value=bridge),
+    ):
+        assert run_in_zbrush(lambda _zbc: {}, "bake", allow_domain_failure=True) == failure
+        with pytest.raises(RuntimeError, match="UVS_MISSING"):
+            run_in_zbrush(lambda _zbc: {}, "bake")
 
 
 def test_pack_plugin_builds_zip(tmp_path) -> None:
@@ -141,6 +155,100 @@ def test_refine_active_subtool_uses_typed_zbrush_operations() -> None:
     assert mock_zbc.set.call_args_list == [
         call("Tool:Deformation:Polish", 12.0),
         call("Tool:Deformation:Inflate", 1.5),
+    ]
+
+
+def test_inspect_active_mesh_returns_machine_comparable_metrics() -> None:
+    mod = _load_script("zbrush-subtool", "inspect_active_mesh.py")
+    mock_zbc = MagicMock()
+    mock_zbc.query_mesh3d.side_effect = lambda property_id: {
+        0: [12_345.0],
+        1: [24_678.0],
+        2: [-1.0, -2.0, -3.0, 1.0, 2.0, 3.0],
+        3: [0.0, 0.0, 1.0, 1.0],
+        8: [42.5],
+    }[property_id]
+    mock_zbc.is_polymesh3d_solid.return_value = True
+    mock_zbc.get_active_tool_path.return_value = "/ZBrush/asset.ZTL"
+
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.inspect_active_mesh()
+
+    assert result["success"] is True
+    assert result["context"]["point_count"] == 12_345
+    assert result["context"]["face_count"] == 24_678
+    assert result["context"]["has_uvs"] is True
+    assert result["context"]["bounds"] == [-1.0, -2.0, -3.0, 1.0, 2.0, 3.0]
+
+
+def test_bake_active_subtool_map_reports_missing_uvs(tmp_path) -> None:
+    mod = _load_script("zbrush-subtool", "bake_active_subtool_map.py")
+    mock_zbc = MagicMock()
+    mock_zbc.query_mesh3d.return_value = [0.0, 0.0, 0.0, 0.0]
+
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.bake_active_subtool_map(
+            map_type="normal",
+            output_path=str(tmp_path / "normal.tif"),
+        )
+
+    assert result["success"] is False
+    assert result["error"] == "UVS_MISSING"
+    mock_zbc.create_normal_map.assert_not_called()
+
+
+def test_bake_active_subtool_map_uses_native_create_controls_and_restores_settings(tmp_path) -> None:
+    mod = _load_script("zbrush-subtool", "bake_active_subtool_map.py")
+    output_path = tmp_path / "normal.tif"
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.query_mesh3d.return_value = [0.0, 0.0, 1.0, 1.0]
+    mock_zbc.get.side_effect = lambda path: {
+        "Tool:UV Map:UV Map Size": 2048.0,
+        "Tool:UV Map:UV Map Border": 4.0,
+        "Tool:Normal Map:SmoothUV": 0.0,
+        "Tool:Normal Map:Tangent": 0.0,
+    }[path]
+    lower_res_enabled = iter((True, False))
+    mock_zbc.is_enabled.side_effect = lambda path: (
+        next(lower_res_enabled) if path == "Tool:Geometry:Lower Res" else True
+    )
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Texture:Export":
+            Path(state["path"]).write_bytes(b"normal-map")
+
+    mock_zbc.press.side_effect = press
+
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.bake_active_subtool_map(
+            map_type="normal",
+            output_path=str(output_path),
+            width=1024,
+            height=1024,
+            border=8,
+        )
+
+    assert result["success"] is True
+    assert output_path.read_bytes() == b"normal-map"
+    mock_zbc.create_normal_map.assert_not_called()
+    assert call("Tool:Normal Map:Create NormalMap") in mock_zbc.press.call_args_list
+    assert mock_zbc.set.call_args_list[-4:] == [
+        call("Tool:UV Map:UV Map Size", 2048.0),
+        call("Tool:UV Map:UV Map Border", 4.0),
+        call("Tool:Normal Map:SmoothUV", 0.0),
+        call("Tool:Normal Map:Tangent", 0.0),
     ]
 
 

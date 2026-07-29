@@ -55,6 +55,10 @@ def _import(zbc: Any, file_path: str) -> Dict[str, Any]:
             if int(zbc.get_subtool_count()) != subtool_count_before + 1:
                 duplicate_failed = True
                 return
+            while zbc.exists("Tool:Geometry:Lower Res") and zbc.is_enabled("Tool:Geometry:Lower Res"):
+                zbc.press("Tool:Geometry:Lower Res")
+            if zbc.exists("Tool:Geometry:Del Higher") and zbc.is_enabled("Tool:Geometry:Del Higher"):
+                zbc.press("Tool:Geometry:Del Higher")
         zbc.set_next_filename(abs_path)
         zbc.press("Tool:Import")
 
@@ -128,6 +132,7 @@ def import_to_scene(
     payload = run_in_zbrush(
         lambda zbc: _import(zbc, variant.local_path),
         "import_to_scene",
+        allow_domain_failure=True,
         file_path=variant.local_path,
     )
 

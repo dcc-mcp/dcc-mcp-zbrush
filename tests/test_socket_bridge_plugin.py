@@ -46,6 +46,15 @@ def test_zbrush_sdk_requests_are_serialized() -> None:
     assert max_active == 1
 
 
+def test_socket_client_timeout_exceeds_host_request_timeout() -> None:
+    from dcc_mcp_zbrush.bridge import DEFAULT_TIMEOUT_SEC
+
+    bridge = _load_bridge_plugin()
+
+    assert DEFAULT_TIMEOUT_SEC > bridge._REQUEST_TIMEOUT_SECONDS
+    assert bridge._REQUEST_TIMEOUT_SECONDS == 600.0
+
+
 def test_bridge_dispatches_zbrush_request_on_queue_drain_thread() -> None:
     bridge = _load_bridge_plugin()
     handler_threads: list[threading.Thread] = []
@@ -64,6 +73,51 @@ def test_bridge_dispatches_zbrush_request_on_queue_drain_thread() -> None:
 
     assert response == {"id": 7, "result": {"ok": True}}
     assert handler_threads == [threading.current_thread()]
+
+
+def test_bridge_rejects_parallel_dispatch_instead_of_queueing_sdk_work() -> None:
+    bridge = _load_bridge_plugin()
+    bridge._REQUEST_TIMEOUT_SECONDS = 0.1
+    bridge._handle_zbrush_request = lambda _method, _params, req_id: {"id": req_id, "result": {"ok": True}}
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        first = executor.submit(bridge._dispatch_request, {"id": 1, "method": "execute_python"})
+        while bridge._REQUEST_QUEUE.empty():
+            time.sleep(0.001)
+
+        status = bridge._route_request({"jsonrpc": "2.0", "id": 3, "method": "ping"})
+        busy = bridge._dispatch_request({"id": 2, "method": "get_scene_info"})
+        bridge._drain_request_queue()
+
+        assert status["result"] == {"ok": True, "busy": True, "active_method": "execute_python"}
+        assert busy["error"]["code"] == -32001
+        assert busy["error"]["data"]["retryable"] is True
+        assert first.result(timeout=1) == {"id": 1, "result": {"ok": True}}
+
+
+def test_bridge_timeout_keeps_request_slot_reserved_until_host_finishes() -> None:
+    bridge = _load_bridge_plugin()
+    bridge._REQUEST_TIMEOUT_SECONDS = 0.01
+    bridge._handle_zbrush_request = lambda _method, _params, req_id: {"id": req_id, "result": {"ok": True}}
+
+    timed_out = bridge._dispatch_request({"id": 1, "method": "execute_python"})
+    busy = bridge._dispatch_request({"id": 2, "method": "execute_python"})
+
+    assert timed_out["error"]["code"] == -32002
+    assert timed_out["error"]["data"]["still_running"] is True
+    assert busy["error"]["code"] == -32001
+
+    bridge._drain_request_queue()
+
+
+def test_bridge_ping_bypasses_main_thread_queue_and_reports_busy_state() -> None:
+    bridge = _load_bridge_plugin()
+    bridge._dispatch_request = MagicMock()
+
+    response = bridge._route_request({"jsonrpc": "2.0", "id": 7, "method": "ping"})
+
+    assert response["result"] == {"ok": True, "busy": False, "active_method": None}
+    bridge._dispatch_request.assert_not_called()
 
 
 def test_main_thread_pump_drains_requests_and_updates_zbrush() -> None:
@@ -215,6 +269,179 @@ def test_bridge_dispatches_refine_active_subtool_on_host_thread() -> None:
     ]
 
 
+def test_bridge_inspects_active_mesh_counts_uvs_and_bounds() -> None:
+    bridge = _load_bridge_plugin()
+    mock_zbc = MagicMock()
+    mock_zbc.query_mesh3d.side_effect = lambda property_id: {
+        0: [2_499_970.0],
+        1: [5_000_000.0],
+        2: [-0.8, -1.0, -0.6, 0.8, 1.0, 0.6],
+        3: [0.0, 0.0, 1.0, 1.0],
+        8: [37.79],
+    }[property_id]
+    mock_zbc.is_polymesh3d_solid.return_value = False
+    mock_zbc.get_active_tool_path.return_value = r"F:\models\fantasy-dragon"
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._inspect_active_mesh()
+
+    assert result == {
+        "active_tool_path": r"F:\models\fantasy-dragon",
+        "subtool_name": "fantasy-dragon",
+        "point_count": 2_499_970,
+        "face_count": 5_000_000,
+        "bounds": [-0.8, -1.0, -0.6, 0.8, 1.0, 0.6],
+        "uv_bounds": [0.0, 0.0, 1.0, 1.0],
+        "has_uvs": True,
+        "mesh_area": 37.79,
+        "solid": False,
+    }
+
+
+def test_bridge_rejects_map_bake_without_uvs(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    output_path = tmp_path / "normal.tif"
+    mock_zbc = MagicMock()
+    mock_zbc.query_mesh3d.return_value = [0.0, 0.0, 0.0, 0.0]
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._bake_active_subtool_map("normal", str(output_path), 1024, 1024, True, 8)
+
+    assert result["error"] == "UVS_MISSING"
+    assert result["output_path"] == str(output_path)
+    mock_zbc.create_normal_map.assert_not_called()
+    mock_zbc.set_next_filename.assert_not_called()
+
+
+def test_bridge_bakes_normal_map_quietly_and_atomically(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    output_path = tmp_path / "normal.tif"
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.query_mesh3d.return_value = [0.0, 0.0, 1.0, 1.0]
+    mock_zbc.get.side_effect = lambda path: {
+        "Tool:UV Map:UV Map Size": 2048.0,
+        "Tool:UV Map:UV Map Border": 4.0,
+        "Tool:Normal Map:SmoothUV": 0.0,
+        "Tool:Normal Map:Tangent": 0.0,
+    }[path]
+    lower_res_enabled = iter((True, True, False))
+    mock_zbc.is_enabled.side_effect = lambda path: (
+        next(lower_res_enabled) if path == "Tool:Geometry:Lower Res" else True
+    )
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Texture:Export":
+            Path(state["path"]).write_bytes(b"normal-map")
+
+    mock_zbc.press.side_effect = press
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._bake_active_subtool_map("normal", str(output_path), 1024, 1024, True, 8)
+
+    assert result["output_path"] == str(output_path)
+    assert result["map_type"] == "normal"
+    assert result["bytes"] == len(b"normal-map")
+    assert output_path.read_bytes() == b"normal-map"
+    mock_zbc.create_normal_map.assert_not_called()
+    assert mock_zbc.press.call_args_list == [
+        call("Tool:Geometry:Lower Res"),
+        call("Tool:Geometry:Lower Res"),
+        call("Tool:Normal Map:Create NormalMap"),
+        call("Tool:Normal Map:Clone NM"),
+        call("Texture:Export"),
+        call("Tool:Geometry:Higher Res"),
+        call("Tool:Geometry:Higher Res"),
+    ]
+    assert mock_zbc.set.call_args_list == [
+        call("Tool:UV Map:UV Map Size", 1024),
+        call("Tool:UV Map:UV Map Border", 8),
+        call("Tool:Normal Map:SmoothUV", 1),
+        call("Tool:Normal Map:Tangent", 1),
+        call("Tool:UV Map:UV Map Size", 2048.0),
+        call("Tool:UV Map:UV Map Border", 4.0),
+        call("Tool:Normal Map:SmoothUV", 0.0),
+        call("Tool:Normal Map:Tangent", 0.0),
+    ]
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
+def test_bridge_bakes_displacement_map_through_alpha_palette(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    output_path = tmp_path / "displacement.tif"
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.is_enabled.side_effect = lambda path: path != "Tool:Geometry:Lower Res"
+    mock_zbc.query_mesh3d.return_value = [0.0, 0.0, 1.0, 1.0]
+    mock_zbc.get.side_effect = lambda path: {
+        "Tool:UV Map:UV Map Size": 2048.0,
+        "Tool:UV Map:UV Map Border": 4.0,
+        "Tool:Displacement Map:SmoothUV": 1.0,
+    }[path]
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Alpha:Export":
+            Path(state["path"]).write_bytes(b"displacement-map")
+
+    mock_zbc.press.side_effect = press
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._bake_active_subtool_map("displacement", str(output_path), 512, 512, False, 2)
+
+    assert result["bytes"] == len(b"displacement-map")
+    assert output_path.read_bytes() == b"displacement-map"
+    mock_zbc.create_displacement_map.assert_not_called()
+    assert mock_zbc.press.call_args_list == [
+        call("Tool:Displacement Map:Create DispMap"),
+        call("Tool:Displacement Map:Clone Disp"),
+        call("Alpha:Export"),
+    ]
+    assert mock_zbc.set.call_args_list == [
+        call("Tool:UV Map:UV Map Size", 512),
+        call("Tool:UV Map:UV Map Border", 2),
+        call("Tool:Displacement Map:SmoothUV", 0),
+        call("Tool:UV Map:UV Map Size", 2048.0),
+        call("Tool:UV Map:UV Map Border", 4.0),
+        call("Tool:Displacement Map:SmoothUV", 1.0),
+    ]
+
+
+def test_bridge_rejects_non_square_map_size(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    bridge._import_zbc = MagicMock()
+
+    result = bridge._bake_active_subtool_map("normal", str(tmp_path / "normal.tif"), 1024, 512, True, 8)
+
+    assert result["error"] == "NON_SQUARE_MAP"
+    bridge._import_zbc.assert_not_called()
+
+
+def test_bridge_reports_when_zbrush_does_not_create_a_map(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    output_path = tmp_path / "normal.tif"
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.is_enabled.side_effect = lambda path: (
+        path
+        not in {
+            "Tool:Geometry:Lower Res",
+            "Tool:Normal Map:Clone NM",
+        }
+    )
+    mock_zbc.query_mesh3d.return_value = [0.0, 0.0, 1.0, 1.0]
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._bake_active_subtool_map("normal", str(output_path), 512, 512, True, 8)
+
+    assert result["error"] == "MAP_NOT_CREATED"
+    assert not output_path.exists()
+    mock_zbc.set_next_filename.assert_not_called()
+
+
 def test_bridge_creates_wrinkle_brush_on_host_thread(tmp_path) -> None:
     bridge = _load_bridge_plugin()
     output = tmp_path / "WrinkleCrease.ZBP"
@@ -278,10 +505,12 @@ def test_bridge_duplicates_active_subtool_before_obj_import(tmp_path) -> None:
     asset_file.write_bytes(b"obj")
     mock_zbc = MagicMock()
     mock_zbc.exists.return_value = True
-    mock_zbc.is_enabled.return_value = True
+    lower_res_enabled = iter((True, True, False))
+    mock_zbc.is_enabled.side_effect = lambda path: (
+        next(lower_res_enabled) if path == "Tool:Geometry:Lower Res" else True
+    )
     mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
     mock_zbc.get_active_tool_path.return_value = r"F:\models\asset"
-    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._import_to_scene(str(asset_file))
@@ -291,9 +520,12 @@ def test_bridge_duplicates_active_subtool_before_obj_import(tmp_path) -> None:
     assert (result["subtool_count_before"], result["subtool_count_after"]) == (1, 2)
     assert mock_zbc.press.call_args_list == [
         call("Tool:SubTool:Duplicate"),
+        call("Tool:Geometry:Lower Res"),
+        call("Tool:Geometry:Lower Res"),
+        call("Tool:Geometry:Del Higher"),
         call("Tool:Import"),
     ]
-    assert mock_zbc.freeze.call_count == 1
+    mock_zbc.freeze.assert_not_called()
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
 
 
@@ -305,7 +537,6 @@ def test_bridge_imports_into_empty_tool_without_duplicate(tmp_path) -> None:
     mock_zbc.exists.return_value = False
     mock_zbc.get_subtool_count.side_effect = [1, 1]
     mock_zbc.get_active_tool_path.return_value = "/ZBrush/asset"
-    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._import_to_scene(str(asset_file))
@@ -323,7 +554,6 @@ def test_bridge_aborts_import_when_duplicate_fails(tmp_path) -> None:
     mock_zbc.exists.return_value = True
     mock_zbc.is_enabled.return_value = True
     mock_zbc.get_subtool_count.side_effect = [1, 1]
-    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._import_to_scene(str(asset_file))
@@ -339,7 +569,6 @@ def test_bridge_exports_without_drawing_ui_actions(tmp_path) -> None:
     output_path = tmp_path / "asset.obj"
     mock_zbc = MagicMock()
     mock_zbc.get_active_tool_path.return_value = r"F:\models\asset"
-    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._export_active_subtool_obj(str(output_path))
@@ -347,7 +576,7 @@ def test_bridge_exports_without_drawing_ui_actions(tmp_path) -> None:
     assert result["subtool_name"] == "asset"
     mock_zbc.set_next_filename.assert_called_once_with(str(output_path))
     mock_zbc.press.assert_called_once_with("Tool:Export")
-    mock_zbc.freeze.assert_called_once()
+    mock_zbc.freeze.assert_not_called()
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
 
 
