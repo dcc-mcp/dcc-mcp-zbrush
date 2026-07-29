@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import yaml
 
@@ -58,6 +58,9 @@ class TestImportToSceneSkill:
     def _make_mock_zbc(self, active_path: str = "/ZBrush/desk.ZTL") -> MagicMock:
         mock_zbc = MagicMock()
         mock_zbc.get_active_tool_path.return_value = active_path
+        mock_zbc.exists.return_value = True
+        mock_zbc.is_enabled.return_value = True
+        mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
         return mock_zbc
 
     def test_successful_obj_import(self, tmp_path) -> None:
@@ -80,7 +83,56 @@ class TestImportToSceneSkill:
         assert result["success"] is True
         assert "desk.ZTL" in result["context"]["imported_nodes"][0]
         mock_zbc.set_next_filename.assert_called_once()
+        assert mock_zbc.press.call_args_list == [
+            call("Tool:SubTool:Duplicate"),
+            call("Tool:Import"),
+        ]
+        extra = result["context"]["extra"]
+        assert (extra["subtool_count_before"], extra["subtool_count_after"]) == (1, 2)
+
+    def test_first_import_uses_empty_tool_without_duplicate(self, tmp_path) -> None:
+        asset_file = tmp_path / "desk.obj"
+        asset_file.write_text("# obj placeholder")
+
+        mock_zbc = self._make_mock_zbc("/ZBrush/desk.ZTL")
+        mock_zbc.exists.return_value = False
+        mock_zbc.get_subtool_count.side_effect = [1, 1]
+        mod = _load_script("import_to_scene.py")
+
+        with patch(
+            "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+            lambda embedded, *_a, **_k: embedded(mock_zbc),
+        ):
+            result = mod.import_to_scene(
+                asset_id="arch/desk",
+                variants=[{"local_path": str(asset_file), "format": "obj"}],
+            )
+
+        assert result["success"] is True
         mock_zbc.press.assert_called_once_with("Tool:Import")
+        mock_zbc.is_enabled.assert_not_called()
+
+    def test_duplicate_failure_does_not_overwrite_active_subtool(self, tmp_path) -> None:
+        asset_file = tmp_path / "desk.obj"
+        asset_file.write_text("# obj placeholder")
+
+        mock_zbc = self._make_mock_zbc()
+        mock_zbc.get_subtool_count.side_effect = [1, 1]
+        mod = _load_script("import_to_scene.py")
+
+        with patch(
+            "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+            lambda embedded, *_a, **_k: embedded(mock_zbc),
+        ):
+            result = mod.import_to_scene(
+                asset_id="arch/desk",
+                variants=[{"local_path": str(asset_file), "format": "obj"}],
+            )
+
+        assert result["success"] is False
+        assert result["error"] == "SUBTOOL_CREATE_FAILED"
+        mock_zbc.set_next_filename.assert_not_called()
+        mock_zbc.press.assert_called_once_with("Tool:SubTool:Duplicate")
 
     def test_fbx_path_is_rejected_before_host_dispatch(self, tmp_path) -> None:
         asset_file = tmp_path / "chair.fbx"

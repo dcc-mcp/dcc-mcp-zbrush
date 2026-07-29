@@ -24,7 +24,8 @@ metadata:
 Import OBJ asset files into ZBrush using the `dcc-mcp-core` asset import
 contract.  The skill validates the `AssetDescriptor`, picks the first
 preferred (or first available) variant, and uses the ZBrush SDK
-`set_next_filename` + `Tool:Import` pattern to load the geometry as a new
-subtool.
+`set_next_filename` + `Tool:Import` pattern to load the geometry. When the
+active tool already contains editable geometry, it duplicates the active
+subtool first so the existing mesh is preserved.
 
 FBX import remains interactive in ZBrush and is rejected before host dispatch.

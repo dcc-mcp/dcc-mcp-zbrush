@@ -247,6 +247,15 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
         }
     zbc = _import_zbc()
     subtool_count_before = int(zbc.get_subtool_count())
+    if zbc.exists("Tool:SubTool:Duplicate") and zbc.is_enabled("Tool:SubTool:Duplicate"):
+        zbc.press("Tool:SubTool:Duplicate")
+        if int(zbc.get_subtool_count()) != subtool_count_before + 1:
+            return {
+                "success": False,
+                "message": "ZBrush did not create an import target subtool",
+                "error": "SUBTOOL_CREATE_FAILED",
+                "imported_nodes": [],
+            }
     zbc.set_next_filename(abs_path)
     zbc.press("Tool:Import")
     subtool_count_after = int(zbc.get_subtool_count())
