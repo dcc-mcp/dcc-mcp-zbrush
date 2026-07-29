@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.21](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.20...v0.2.21) (2026-07-29)
+
+
+### Features
+
+* add typed ZBrush turntable capture ([#57](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/57)) ([1568499](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/1568499c969860c56f4a5f42e5639f9dcaf110f2))
+
+
+### Bug Fixes
+
+* reconnect sidecar after ZBrush starts ([#59](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/59)) ([aef3fe7](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/aef3fe7a6820849268e90fe09ee170143c3bc418))
+
 ## [0.2.20](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.19...v0.2.20) (2026-07-29)
 
 
