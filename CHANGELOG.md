@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.20](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.19...v0.2.20) (2026-07-29)
+
+
+### Features
+
+* add typed wrinkle brush workflow ([#55](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/55)) ([2ad40ed](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/2ad40edca354a184a0e91dba418e51f32705114e))
+
 ## [0.2.19](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.18...v0.2.19) (2026-07-29)
 
 
