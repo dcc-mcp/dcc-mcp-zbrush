@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import importlib
 import json
+import ntpath
 import os
 import queue
 import socket
 import threading
 import time
 import traceback
+from contextlib import contextmanager
 from typing import Any, Dict, Iterator, Optional
 
 _ZBRUSH_REQUEST_LOCK = threading.Lock()
@@ -107,6 +109,19 @@ def _subtool_status_flags(status: int) -> Dict[str, bool]:
     return {"visible": bool(status & 0x01), "locked": bool(status & 0x02)}
 
 
+@contextmanager
+def _quiet_ui_actions(zbc: Any) -> Iterator[None]:
+    zbc.show_actions(0)
+    try:
+        yield
+    finally:
+        zbc.show_actions(1)
+
+
+def _subtool_name(path: str) -> str:
+    return ntpath.basename(path)
+
+
 def _get_session_info() -> Dict[str, Any]:
     zbc = _import_zbc()
     return {
@@ -162,7 +177,7 @@ def _select_subtool(index: int) -> Dict[str, Any]:
     return {
         "index": index,
         "active_tool_path": path,
-        "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+        "subtool_name": _subtool_name(path),
     }
 
 
@@ -194,7 +209,7 @@ def _refine_active_subtool(
     path = str(zbc.get_active_tool_path() or "")
     return {
         "active_tool_path": path,
-        "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+        "subtool_name": _subtool_name(path),
         "subdivision_levels": subdivision_levels,
         "polish": polish,
         "inflate": inflate,
@@ -212,13 +227,14 @@ def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
             "output_path": output_path,
         }
     abs_path = os.path.abspath(output_path)
-    zbc.set_next_filename(abs_path)
-    zbc.press("Tool:Export")
+    with _quiet_ui_actions(zbc):
+        zbc.set_next_filename(abs_path)
+        zbc.press("Tool:Export")
     path = str(zbc.get_active_tool_path() or "")
     return {
         "output_path": abs_path,
         "active_tool_path": path,
-        "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+        "subtool_name": _subtool_name(path),
     }
 
 
@@ -247,20 +263,21 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
         }
     zbc = _import_zbc()
     subtool_count_before = int(zbc.get_subtool_count())
-    if zbc.exists("Tool:SubTool:Duplicate") and zbc.is_enabled("Tool:SubTool:Duplicate"):
-        zbc.press("Tool:SubTool:Duplicate")
-        if int(zbc.get_subtool_count()) != subtool_count_before + 1:
-            return {
-                "success": False,
-                "message": "ZBrush did not create an import target subtool",
-                "error": "SUBTOOL_CREATE_FAILED",
-                "imported_nodes": [],
-            }
-    zbc.set_next_filename(abs_path)
-    zbc.press("Tool:Import")
+    with _quiet_ui_actions(zbc):
+        if zbc.exists("Tool:SubTool:Duplicate") and zbc.is_enabled("Tool:SubTool:Duplicate"):
+            zbc.press("Tool:SubTool:Duplicate")
+            if int(zbc.get_subtool_count()) != subtool_count_before + 1:
+                return {
+                    "success": False,
+                    "message": "ZBrush did not create an import target subtool",
+                    "error": "SUBTOOL_CREATE_FAILED",
+                    "imported_nodes": [],
+                }
+        zbc.set_next_filename(abs_path)
+        zbc.press("Tool:Import")
     subtool_count_after = int(zbc.get_subtool_count())
     active_path = str(zbc.get_active_tool_path() or "")
-    subtool_name = active_path.rsplit("/", 1)[-1] if active_path else ""
+    subtool_name = _subtool_name(active_path)
     imported_nodes = [subtool_name] if subtool_name else []
     return {
         "success": True,

@@ -6,6 +6,7 @@ import os
 
 from dcc_mcp_core.skill import skill_entry
 
+from dcc_mcp_zbrush._skill_host import quiet_ui_actions, subtool_name_from_path
 from dcc_mcp_zbrush.api import with_zbrush, zb_error, zb_success
 
 
@@ -19,13 +20,14 @@ def _export(zbc, output_path: str) -> dict:
             prompt="Create the directory or choose an existing folder.",
         )
 
-    zbc.set_next_filename(os.path.abspath(output_path))
-    zbc.press("Tool:Export")
+    with quiet_ui_actions(zbc):
+        zbc.set_next_filename(os.path.abspath(output_path))
+        zbc.press("Tool:Export")
     path = str(zbc.get_active_tool_path() or "")
     return {
         "output_path": os.path.abspath(output_path),
         "active_tool_path": path,
-        "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+        "subtool_name": subtool_name_from_path(path),
     }
 
 

@@ -62,6 +62,19 @@ def test_skills_index_exists() -> None:
         assert skill in text
 
 
+def test_quiet_ui_actions_restore_feedback_and_normalize_subtool_paths() -> None:
+    from dcc_mcp_zbrush._skill_host import quiet_ui_actions, subtool_name_from_path
+
+    mock_zbc = MagicMock()
+    with pytest.raises(RuntimeError, match="stop"):
+        with quiet_ui_actions(mock_zbc):
+            raise RuntimeError("stop")
+
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+    assert subtool_name_from_path(r"F:\models\horse_statue_01") == "horse_statue_01"
+    assert subtool_name_from_path("/ZBrush/marble_bust_01") == "marble_bust_01"
+
+
 def test_pack_plugin_builds_zip(tmp_path) -> None:
     import importlib.util
 

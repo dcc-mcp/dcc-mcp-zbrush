@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dcc_mcp_core.skill import skill_entry
 
+from dcc_mcp_zbrush._skill_host import subtool_name_from_path
 from dcc_mcp_zbrush.api import with_zbrush, zb_success
 
 
@@ -22,7 +23,7 @@ def _refine(
     path = str(zbc.get_active_tool_path() or "")
     return {
         "active_tool_path": path,
-        "subtool_name": path.rsplit("/", 1)[-1] if path else "",
+        "subtool_name": subtool_name_from_path(path),
         "subdivision_levels": subdivision_levels,
         "polish": float(polish),
         "inflate": float(inflate),
