@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, TypeVar
+import ntpath
+from contextlib import contextmanager
+from typing import Any, Callable, Dict, Iterator, TypeVar
 
 _T = TypeVar("_T")
+
+
+@contextmanager
+def quiet_ui_actions(zbc: Any) -> Iterator[None]:
+    """Suppress scripted UI action feedback and always restore it."""
+    zbc.show_actions(0)
+    try:
+        yield
+    finally:
+        zbc.show_actions(1)
+
+
+def subtool_name_from_path(path: str) -> str:
+    """Return the leaf name from either Windows or slash-separated ZBrush paths."""
+    return ntpath.basename(path)
 
 
 def run_in_zbrush(embedded: Callable[[Any], _T], bridge_method: str, **bridge_params: Any) -> _T:
