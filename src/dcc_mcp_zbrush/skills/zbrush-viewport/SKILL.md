@@ -22,6 +22,7 @@ metadata:
 # zbrush-viewport
 
 Captures PSD frames through ZBrush's native `set_transform`, optional BPR
-render, and `Document:Export` controls. The tool restores the exact starting
-transform after success or failure and suppresses scripted action feedback.
+render or PolyFrame display, and `Document:Export` controls. The tool restores
+the exact starting transform and PolyFrame state after success or failure and
+suppresses scripted action feedback.
 

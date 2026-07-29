@@ -598,7 +598,13 @@ def test_bridge_captures_turntable_and_restores_transform(tmp_path) -> None:
 
     response = bridge._handle_zbrush_request(
         "capture_turntable",
-        {"output_dir": str(tmp_path), "angles": [0, 90], "prefix": "dragon", "bpr_render": True},
+        {
+            "output_dir": str(tmp_path),
+            "angles": [0, 90],
+            "prefix": "dragon",
+            "bpr_render": True,
+            "polyframe": True,
+        },
         46,
     )
 
@@ -606,4 +612,6 @@ def test_bridge_captures_turntable_and_restores_transform(tmp_path) -> None:
     assert (tmp_path / "dragon-000.psd").read_bytes() == b"psd"
     assert (tmp_path / "dragon-001.psd").read_bytes() == b"psd"
     assert mock_zbc.set_transform.call_args_list[-1] == call(*base_transform)
+    assert [item.args[0] for item in mock_zbc.press_key.call_args_list] == ["SHIFT+F", "SHIFT+F"]
+    assert all(callable(item.args[1]) for item in mock_zbc.press_key.call_args_list)
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]

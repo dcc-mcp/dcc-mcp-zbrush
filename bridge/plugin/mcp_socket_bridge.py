@@ -113,6 +113,7 @@ def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> 
                 params.get("angles"),
                 str(params.get("prefix", "zbrush-turntable")),
                 bool(params.get("bpr_render", True)),
+                bool(params.get("polyframe", False)),
             )
         elif method == "import_to_scene":
             result = _import_to_scene(str(params.get("file_path", "")))
@@ -579,6 +580,7 @@ def _capture_turntable(
     angles: Any,
     prefix: str,
     bpr_render: bool,
+    polyframe: bool,
 ) -> Dict[str, Any]:
     if not output_dir:
         return {"success": False, "message": "output_dir must not be empty", "error": "OUTPUT_DIR_MISSING"}
@@ -609,9 +611,13 @@ def _capture_turntable(
         raise RuntimeError("ZBrush returned an invalid tool transform")
 
     staged: list[tuple[str, str, float]] = []
+    polyframe_toggled = False
     try:
         with _quiet_ui_actions(zbc):
             try:
+                if polyframe:
+                    zbc.press_key("SHIFT+F", lambda: None)
+                    polyframe_toggled = True
                 for index, angle in enumerate(normalized_angles):
                     zbc.set_transform(
                         x_rotate=base_transform[6],
@@ -632,7 +638,11 @@ def _capture_turntable(
                     if not os.path.isfile(stage_path) or os.path.getsize(stage_path) == 0:
                         raise RuntimeError(f"ZBrush did not export a non-empty document frame: {final_path}")
             finally:
-                zbc.set_transform(*base_transform)
+                try:
+                    zbc.set_transform(*base_transform)
+                finally:
+                    if polyframe_toggled:
+                        zbc.press_key("SHIFT+F", lambda: None)
                 zbc.update(redraw_ui=True)
 
         frames = []
@@ -644,6 +654,7 @@ def _capture_turntable(
             "frames": frames,
             "base_transform": base_transform,
             "bpr_render": bpr_render,
+            "polyframe": polyframe,
         }
     finally:
         for stage_path, _final_path, _angle in staged:

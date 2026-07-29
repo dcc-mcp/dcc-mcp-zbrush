@@ -321,6 +321,7 @@ def test_capture_turntable_exports_frames_and_restores_transform(tmp_path) -> No
             output_dir=str(tmp_path),
             angles=[0, 90],
             prefix="dragon",
+            polyframe=True,
         )
 
     assert result["success"] is True
@@ -328,4 +329,20 @@ def test_capture_turntable_exports_frames_and_restores_transform(tmp_path) -> No
     assert (tmp_path / "dragon-000.psd").read_bytes() == b"psd"
     assert (tmp_path / "dragon-001.psd").read_bytes() == b"psd"
     assert mock_zbc.set_transform.call_args_list[-1] == call(*base_transform)
+    assert [item.args[0] for item in mock_zbc.press_key.call_args_list] == ["SHIFT+F", "SHIFT+F"]
+    assert all(callable(item.args[1]) for item in mock_zbc.press_key.call_args_list)
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
+def test_capture_turntable_restores_polyframe_after_export_failure(tmp_path) -> None:
+    mod = _load_script("zbrush-viewport", "capture_turntable.py")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    base_transform = [480.0, 360.0, 0.0, 300.0, 300.0, 300.0, 5.0, 10.0, 175.0]
+    mock_zbc.get_transform.return_value = base_transform
+
+    with pytest.raises(RuntimeError, match="did not export"):
+        mod._capture(mock_zbc, str(tmp_path), [0.0], "dragon", False, True)
+
+    assert mock_zbc.set_transform.call_args_list[-1] == call(*base_transform)
+    assert [item.args[0] for item in mock_zbc.press_key.call_args_list] == ["SHIFT+F", "SHIFT+F"]

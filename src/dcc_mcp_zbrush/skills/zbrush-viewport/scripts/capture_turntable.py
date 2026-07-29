@@ -44,7 +44,14 @@ def _validate(
     return abs_dir, normalized, None
 
 
-def _capture(zbc: Any, output_dir: str, angles: list[float], prefix: str, bpr_render: bool) -> dict:
+def _capture(
+    zbc: Any,
+    output_dir: str,
+    angles: list[float],
+    prefix: str,
+    bpr_render: bool,
+    polyframe: bool,
+) -> dict:
     required = ["Document:Export"]
     if bpr_render:
         required.append("Render:BPR")
@@ -56,9 +63,13 @@ def _capture(zbc: Any, output_dir: str, angles: list[float], prefix: str, bpr_re
     if len(base_transform) != 9:
         raise RuntimeError("ZBrush returned an invalid tool transform")
     staged: list[tuple[str, str, float]] = []
+    polyframe_toggled = False
     try:
         with quiet_ui_actions(zbc):
             try:
+                if polyframe:
+                    zbc.press_key("SHIFT+F", lambda: None)
+                    polyframe_toggled = True
                 for index, angle in enumerate(angles):
                     zbc.set_transform(
                         x_rotate=base_transform[6],
@@ -79,7 +90,11 @@ def _capture(zbc: Any, output_dir: str, angles: list[float], prefix: str, bpr_re
                     if not os.path.isfile(stage_path) or os.path.getsize(stage_path) == 0:
                         raise RuntimeError(f"ZBrush did not export a non-empty document frame: {final_path}")
             finally:
-                zbc.set_transform(*base_transform)
+                try:
+                    zbc.set_transform(*base_transform)
+                finally:
+                    if polyframe_toggled:
+                        zbc.press_key("SHIFT+F", lambda: None)
                 zbc.update(redraw_ui=True)
 
         frames = []
@@ -91,6 +106,7 @@ def _capture(zbc: Any, output_dir: str, angles: list[float], prefix: str, bpr_re
             "frames": frames,
             "base_transform": base_transform,
             "bpr_render": bpr_render,
+            "polyframe": polyframe,
         }
     finally:
         for stage_path, _final_path, _angle in staged:
@@ -105,6 +121,7 @@ def capture_turntable(
     angles: Optional[Iterable[float]] = None,
     prefix: str = "zbrush-turntable",
     bpr_render: bool = True,
+    polyframe: bool = False,
     **kwargs: Any,
 ) -> dict:
     from dcc_mcp_zbrush._skill_host import run_in_zbrush  # noqa: PLC0415
@@ -114,12 +131,13 @@ def capture_turntable(
         return error
     assert abs_dir is not None and normalized is not None
     payload = run_in_zbrush(
-        lambda zbc: _capture(zbc, abs_dir, normalized, prefix, bpr_render),
+        lambda zbc: _capture(zbc, abs_dir, normalized, prefix, bpr_render, polyframe),
         "capture_turntable",
         output_dir=abs_dir,
         angles=normalized,
         prefix=prefix,
         bpr_render=bpr_render,
+        polyframe=polyframe,
     )
     if isinstance(payload, dict) and payload.get("success") is False:
         return payload
