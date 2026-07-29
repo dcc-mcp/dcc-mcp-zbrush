@@ -4,7 +4,8 @@ tools:
       Rotate the active tool around the viewport Y axis and export one PSD
       document frame per angle. Existing frame files with the same prefix are
       replaced only after each staged export succeeds. Restores the original
-      tool transform and suppresses scripted action feedback.
+      tool transform and optional PolyFrame state while suppressing scripted
+      action feedback.
     source_file: scripts/capture_turntable.py
     execution: sync
     job_strategy: monolithic
@@ -41,6 +42,12 @@ tools:
           type: boolean
           default: true
           description: Run ZBrush BPR before exporting each frame.
+        polyframe:
+          type: boolean
+          default: false
+          description: >-
+            Toggle PolyFrame for viewport captures and restore its previous
+            state afterward. Set bpr_render=false to preserve the overlay.
     output_schema:
       type: object
       properties:
@@ -55,8 +62,9 @@ tools:
           output_dir: "C:/captures/dragon"
           angles: [0, 45, 90, 135, 180, 225, 270, 315]
           prefix: dragon
-          bpr_render: true
-        note: Capture an eight-view BPR turntable.
+          bpr_render: false
+          polyframe: true
+        note: Capture an eight-view PolyFrame turntable.
     next-tools:
       on-success:
         - zbrush_scene__get_scene_info
