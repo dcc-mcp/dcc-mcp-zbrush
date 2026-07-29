@@ -539,6 +539,7 @@ class TestDocsDrift:
         "zbrush-scripting",
         "zbrush-scene",
         "zbrush-subtool",
+        "zbrush-brush",
         "zbrush-interchange",
     }
 

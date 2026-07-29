@@ -15,7 +15,7 @@ from dcc_mcp_core.asset_import import (
 )
 from dcc_mcp_core.skill import skill_entry
 
-from dcc_mcp_zbrush._skill_host import quiet_ui_actions, subtool_name_from_path
+from dcc_mcp_zbrush._skill_host import run_quiet_ui, subtool_name_from_path
 from dcc_mcp_zbrush.api import with_zbrush, zb_error, zb_success
 
 _SUPPORTED_FORMATS = {AssetFormat.OBJ, AssetFormat.UNKNOWN}
@@ -46,18 +46,26 @@ def _import(zbc: Any, file_path: str) -> Dict[str, Any]:
             "imported_nodes": [],
         }
     subtool_count_before = int(zbc.get_subtool_count())
-    with quiet_ui_actions(zbc):
+    duplicate_failed = False
+
+    def import_obj() -> None:
+        nonlocal duplicate_failed
         if zbc.exists("Tool:SubTool:Duplicate") and zbc.is_enabled("Tool:SubTool:Duplicate"):
             zbc.press("Tool:SubTool:Duplicate")
             if int(zbc.get_subtool_count()) != subtool_count_before + 1:
-                return {
-                    "success": False,
-                    "message": "ZBrush did not create an import target subtool",
-                    "error": "SUBTOOL_CREATE_FAILED",
-                    "imported_nodes": [],
-                }
+                duplicate_failed = True
+                return
         zbc.set_next_filename(abs_path)
         zbc.press("Tool:Import")
+
+    run_quiet_ui(zbc, import_obj)
+    if duplicate_failed:
+        return {
+            "success": False,
+            "message": "ZBrush did not create an import target subtool",
+            "error": "SUBTOOL_CREATE_FAILED",
+            "imported_nodes": [],
+        }
     subtool_count_after = int(zbc.get_subtool_count())
     active_path = str(zbc.get_active_tool_path() or "")
     subtool_name = subtool_name_from_path(active_path)

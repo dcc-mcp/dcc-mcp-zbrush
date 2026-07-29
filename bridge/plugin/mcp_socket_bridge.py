@@ -20,7 +20,7 @@ import threading
 import time
 import traceback
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Callable, Dict, Iterator, Optional
 
 _ZBRUSH_REQUEST_LOCK = threading.Lock()
 _CLIENT_READ_SECONDS = 1.0
@@ -80,6 +80,10 @@ def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> 
                 float(params.get("polish", 0)),
                 float(params.get("inflate", 0)),
             )
+        elif method == "create_wrinkle_brush":
+            result = _create_wrinkle_brush(str(params.get("output_path", "")))
+        elif method == "load_wrinkle_brush":
+            result = _load_wrinkle_brush(str(params.get("brush_path", "")))
         elif method == "export_active_subtool_obj":
             result = _export_active_subtool_obj(str(params.get("output_path", "")))
         elif method == "import_to_scene":
@@ -116,6 +120,11 @@ def _quiet_ui_actions(zbc: Any) -> Iterator[None]:
         yield
     finally:
         zbc.show_actions(1)
+
+
+def _run_quiet_ui(zbc: Any, action: Callable[[], None]) -> None:
+    with _quiet_ui_actions(zbc):
+        zbc.freeze(action)
 
 
 def _subtool_name(path: str) -> str:
@@ -216,6 +225,129 @@ def _refine_active_subtool(
     }
 
 
+_WRINKLE_SETTINGS = {
+    "Stroke:Lazy Mouse": 1.0,
+    "Stroke:Lazy Mouse:LazyStep": 0.05,
+    "Stroke:Lazy Mouse:LazySmooth": 3.0,
+    "Stroke:Lazy Mouse:LazyRadius": 12.0,
+    "Draw:Z Intensity": 18.0,
+    "Draw:Focal Shift": -70.0,
+    "Draw:Draw Size": 18.0,
+    "Draw:Zsub": 1.0,
+}
+
+
+def _brush_error(path: str, *, must_exist: bool) -> Optional[Dict[str, Any]]:
+    if not path:
+        return {"success": False, "message": "Brush path must not be empty", "error": "BRUSH_PATH_MISSING"}
+    if os.path.splitext(path)[1].lower() != ".zbp":
+        return {
+            "success": False,
+            "message": "Brush path must end in .ZBP",
+            "error": "UNSUPPORTED_FORMAT",
+            "brush_path": path,
+        }
+    if must_exist and not os.path.isfile(path):
+        return {
+            "success": False,
+            "message": f"Brush file does not exist: {path}",
+            "error": "FILE_NOT_FOUND",
+            "brush_path": path,
+        }
+    directory = os.path.dirname(path)
+    if not must_exist and directory and not os.path.isdir(directory):
+        return {
+            "success": False,
+            "message": f"Output directory does not exist: {directory}",
+            "error": "OUTPUT_DIR_MISSING",
+            "brush_path": path,
+        }
+    return None
+
+
+def _require_controls(zbc: Any, *controls: str) -> None:
+    missing = [control for control in controls if not zbc.exists(control)]
+    if missing:
+        raise RuntimeError(f"Missing required ZBrush controls: {', '.join(missing)}")
+
+
+def _apply_wrinkle_settings(zbc: Any) -> None:
+    _require_controls(zbc, "Stroke:FreeHand", "Alpha:Alpha 01", *_WRINKLE_SETTINGS)
+    zbc.press("Stroke:FreeHand")
+    zbc.press("Alpha:Alpha 01")
+    for item_path, value in _WRINKLE_SETTINGS.items():
+        zbc.set(item_path, value)
+    if zbc.exists("Draw:Rgb"):
+        zbc.set("Draw:Rgb", 0.0)
+
+
+def _current_wrinkle_settings(zbc: Any) -> Dict[str, float]:
+    return {
+        "lazy_mouse": float(zbc.get("Stroke:Lazy Mouse")),
+        "lazy_step": float(zbc.get("Stroke:Lazy Mouse:LazyStep")),
+        "lazy_smooth": float(zbc.get("Stroke:Lazy Mouse:LazySmooth")),
+        "lazy_radius": float(zbc.get("Stroke:Lazy Mouse:LazyRadius")),
+        "z_intensity": float(zbc.get("Draw:Z Intensity")),
+        "focal_shift": float(zbc.get("Draw:Focal Shift")),
+        "draw_size": float(zbc.get("Draw:Draw Size")),
+        "zsub": float(zbc.get("Draw:Zsub")),
+    }
+
+
+def _create_wrinkle_brush(output_path: str) -> Dict[str, Any]:
+    error = _brush_error(output_path, must_exist=False)
+    if error:
+        return error
+    abs_path = os.path.abspath(output_path)
+    zbc = _import_zbc()
+    _require_controls(zbc, "Brush:DamStandard", "Brush:Clone", "Brush:Save As")
+    backup_path = ""
+    if os.path.isfile(abs_path):
+        backup_path = f"{abs_path}.dcc-mcp-{os.getpid()}-{time.time_ns()}.bak"
+        os.replace(abs_path, backup_path)
+    try:
+        with _quiet_ui_actions(zbc):
+            zbc.press("Brush:DamStandard")
+            zbc.press("Brush:Clone")
+            _apply_wrinkle_settings(zbc)
+            zbc.set_next_filename(abs_path)
+            zbc.press("Brush:Save As")
+        if not os.path.isfile(abs_path) or os.path.getsize(abs_path) == 0:
+            raise RuntimeError("ZBrush did not save a non-empty brush file")
+    except Exception:
+        if os.path.isfile(abs_path):
+            os.remove(abs_path)
+        if backup_path:
+            os.replace(backup_path, abs_path)
+        raise
+    if backup_path:
+        os.remove(backup_path)
+    return {
+        "brush_path": abs_path,
+        "bytes": os.path.getsize(abs_path),
+        "base_brush": "DamStandard",
+        "settings": _current_wrinkle_settings(zbc),
+    }
+
+
+def _load_wrinkle_brush(brush_path: str) -> Dict[str, Any]:
+    error = _brush_error(brush_path, must_exist=True)
+    if error:
+        return error
+    abs_path = os.path.abspath(brush_path)
+    zbc = _import_zbc()
+    _require_controls(zbc, "Brush:Load Brush")
+    with _quiet_ui_actions(zbc):
+        zbc.set_next_filename(abs_path)
+        zbc.press("Brush:Load Brush")
+        _apply_wrinkle_settings(zbc)
+    return {
+        "brush_path": abs_path,
+        "bytes": os.path.getsize(abs_path),
+        "settings": _current_wrinkle_settings(zbc),
+    }
+
+
 def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
     zbc = _import_zbc()
     directory = os.path.dirname(os.path.abspath(output_path))
@@ -227,9 +359,12 @@ def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
             "output_path": output_path,
         }
     abs_path = os.path.abspath(output_path)
-    with _quiet_ui_actions(zbc):
+
+    def export_obj() -> None:
         zbc.set_next_filename(abs_path)
         zbc.press("Tool:Export")
+
+    _run_quiet_ui(zbc, export_obj)
     path = str(zbc.get_active_tool_path() or "")
     return {
         "output_path": abs_path,
@@ -263,18 +398,26 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
         }
     zbc = _import_zbc()
     subtool_count_before = int(zbc.get_subtool_count())
-    with _quiet_ui_actions(zbc):
+    duplicate_failed = False
+
+    def import_obj() -> None:
+        nonlocal duplicate_failed
         if zbc.exists("Tool:SubTool:Duplicate") and zbc.is_enabled("Tool:SubTool:Duplicate"):
             zbc.press("Tool:SubTool:Duplicate")
             if int(zbc.get_subtool_count()) != subtool_count_before + 1:
-                return {
-                    "success": False,
-                    "message": "ZBrush did not create an import target subtool",
-                    "error": "SUBTOOL_CREATE_FAILED",
-                    "imported_nodes": [],
-                }
+                duplicate_failed = True
+                return
         zbc.set_next_filename(abs_path)
         zbc.press("Tool:Import")
+
+    _run_quiet_ui(zbc, import_obj)
+    if duplicate_failed:
+        return {
+            "success": False,
+            "message": "ZBrush did not create an import target subtool",
+            "error": "SUBTOOL_CREATE_FAILED",
+            "imported_nodes": [],
+        }
     subtool_count_after = int(zbc.get_subtool_count())
     active_path = str(zbc.get_active_tool_path() or "")
     subtool_name = _subtool_name(active_path)

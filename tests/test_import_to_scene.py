@@ -61,6 +61,7 @@ class TestImportToSceneSkill:
         mock_zbc.exists.return_value = True
         mock_zbc.is_enabled.return_value = True
         mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
+        mock_zbc.freeze.side_effect = lambda action: action()
         return mock_zbc
 
     def test_successful_obj_import(self, tmp_path) -> None:
@@ -87,6 +88,7 @@ class TestImportToSceneSkill:
             call("Tool:SubTool:Duplicate"),
             call("Tool:Import"),
         ]
+        assert mock_zbc.freeze.call_count == 1
         extra = result["context"]["extra"]
         assert (extra["subtool_count_before"], extra["subtool_count_after"]) == (1, 2)
 

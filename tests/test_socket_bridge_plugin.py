@@ -215,6 +215,51 @@ def test_bridge_dispatches_refine_active_subtool_on_host_thread() -> None:
     ]
 
 
+def test_bridge_creates_wrinkle_brush_on_host_thread(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    output = tmp_path / "WrinkleCrease.ZBP"
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.get.side_effect = lambda path: bridge._WRINKLE_SETTINGS[path]
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Brush:Save As":
+            Path(state["path"]).write_bytes(b"zbp")
+
+    mock_zbc.press.side_effect = press
+    bridge._import_zbc = lambda: mock_zbc
+
+    response = bridge._handle_zbrush_request("create_wrinkle_brush", {"output_path": str(output)}, 43)
+
+    assert response["result"]["bytes"] == 3
+    assert output.read_bytes() == b"zbp"
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
+def test_bridge_restores_existing_brush_when_save_fails(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    output = tmp_path / "WrinkleCrease.ZBP"
+    output.write_bytes(b"original")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    bridge._import_zbc = lambda: mock_zbc
+
+    response = bridge._handle_zbrush_request("create_wrinkle_brush", {"output_path": str(output)}, 44)
+
+    assert response["error"]["code"] == -32000
+    assert output.read_bytes() == b"original"
+
+
+def test_bridge_rejects_empty_brush_path_before_resolving_it() -> None:
+    bridge = _load_bridge_plugin()
+
+    response = bridge._handle_zbrush_request("create_wrinkle_brush", {"output_path": ""}, 45)
+
+    assert response["result"]["error"] == "BRUSH_PATH_MISSING"
+
+
 def test_bridge_rejects_fbx_before_importing_zbrush_commands(tmp_path) -> None:
     bridge = _load_bridge_plugin()
     asset_file = tmp_path / "asset.fbx"
@@ -236,6 +281,7 @@ def test_bridge_duplicates_active_subtool_before_obj_import(tmp_path) -> None:
     mock_zbc.is_enabled.return_value = True
     mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
     mock_zbc.get_active_tool_path.return_value = r"F:\models\asset"
+    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._import_to_scene(str(asset_file))
@@ -247,6 +293,7 @@ def test_bridge_duplicates_active_subtool_before_obj_import(tmp_path) -> None:
         call("Tool:SubTool:Duplicate"),
         call("Tool:Import"),
     ]
+    assert mock_zbc.freeze.call_count == 1
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
 
 
@@ -258,6 +305,7 @@ def test_bridge_imports_into_empty_tool_without_duplicate(tmp_path) -> None:
     mock_zbc.exists.return_value = False
     mock_zbc.get_subtool_count.side_effect = [1, 1]
     mock_zbc.get_active_tool_path.return_value = "/ZBrush/asset"
+    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._import_to_scene(str(asset_file))
@@ -275,6 +323,7 @@ def test_bridge_aborts_import_when_duplicate_fails(tmp_path) -> None:
     mock_zbc.exists.return_value = True
     mock_zbc.is_enabled.return_value = True
     mock_zbc.get_subtool_count.side_effect = [1, 1]
+    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._import_to_scene(str(asset_file))
@@ -290,6 +339,7 @@ def test_bridge_exports_without_drawing_ui_actions(tmp_path) -> None:
     output_path = tmp_path / "asset.obj"
     mock_zbc = MagicMock()
     mock_zbc.get_active_tool_path.return_value = r"F:\models\asset"
+    mock_zbc.freeze.side_effect = lambda action: action()
     bridge._import_zbc = lambda: mock_zbc
 
     result = bridge._export_active_subtool_obj(str(output_path))
@@ -297,4 +347,5 @@ def test_bridge_exports_without_drawing_ui_actions(tmp_path) -> None:
     assert result["subtool_name"] == "asset"
     mock_zbc.set_next_filename.assert_called_once_with(str(output_path))
     mock_zbc.press.assert_called_once_with("Tool:Export")
+    mock_zbc.freeze.assert_called_once()
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]

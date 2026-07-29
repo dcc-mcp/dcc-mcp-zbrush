@@ -19,6 +19,12 @@ def quiet_ui_actions(zbc: Any) -> Iterator[None]:
         zbc.show_actions(1)
 
 
+def run_quiet_ui(zbc: Any, action: Callable[[], None]) -> None:
+    """Run file-oriented UI commands without action drawing or UI redraws."""
+    with quiet_ui_actions(zbc):
+        zbc.freeze(action)
+
+
 def subtool_name_from_path(path: str) -> str:
     """Return the leaf name from either Windows or slash-separated ZBrush paths."""
     return ntpath.basename(path)
