@@ -53,10 +53,28 @@ def test_zb_error():
 
 
 def test_get_bridge_raises_when_disconnected():
-    from dcc_mcp_zbrush.api import ZBrushNotAvailableError, get_bridge
+    from dcc_mcp_zbrush.api import ZBrushNotAvailableError, get_bridge, set_bridge
 
-    with pytest.raises(ZBrushNotAvailableError):
-        get_bridge()
+    set_bridge(None)
+    try:
+        with pytest.raises(ZBrushNotAvailableError):
+            get_bridge()
+    finally:
+        set_bridge(None)
+
+
+def test_get_bridge_reconnects_retained_sidecar():
+    from dcc_mcp_zbrush.api import get_bridge, set_bridge
+
+    bridge = MagicMock()
+    bridge.is_connected.return_value = False
+    set_bridge(bridge)
+    try:
+        assert get_bridge() is bridge
+    finally:
+        set_bridge(None)
+
+    bridge.connect.assert_called_once_with()
 
 
 def test_resolve_mode_defaults_to_sidecar_outside_zbrush():
@@ -87,6 +105,38 @@ def test_socket_bridge_ping(monkeypatch):
     monkeypatch.setattr(bridge, "_send", fake_send)
     bridge.connect()
     assert bridge.is_connected()
+
+
+def test_socket_bridge_transport_failure_clears_connection(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    bridge._connected = True
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionError("gone")))
+
+    with pytest.raises(ConnectionError, match="gone"):
+        bridge.call("get_session_info")
+
+    assert bridge.is_connected() is False
+
+
+def test_sidecar_retains_bridge_when_initial_connect_fails():
+    from dcc_mcp_zbrush.server import ZBrushMcpServer
+
+    server = object.__new__(ZBrushMcpServer)
+    server._mode = "sidecar"
+    server._socket_host = "127.0.0.1"
+    server._socket_port = 9876
+    bridge = MagicMock()
+    bridge.connect.side_effect = ConnectionError("not started yet")
+
+    with (
+        patch("dcc_mcp_zbrush.bridge.SocketBridge", return_value=bridge),
+        patch("dcc_mcp_zbrush.api.set_bridge") as set_bridge,
+    ):
+        server._init_sidecar_bridge()
+
+    set_bridge.assert_called_once_with(bridge)
 
 
 def test_minimal_mode_config():

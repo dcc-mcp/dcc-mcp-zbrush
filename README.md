@@ -229,6 +229,9 @@ def my_tool(**kwargs) -> dict:
 2. Start ZBrush.
 3. Run the MCP server outside ZBrush:
 
+The sidecar can also start first: it retains the bridge endpoint and retries
+the connection on the first tool call after ZBrush becomes available.
+
 ```bash
 dcc-mcp-zbrush --mode sidecar --socket-port 9876
 ```
