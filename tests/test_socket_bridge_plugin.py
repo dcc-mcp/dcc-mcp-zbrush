@@ -224,3 +224,58 @@ def test_bridge_rejects_fbx_before_importing_zbrush_commands(tmp_path) -> None:
 
     assert result["error"] == "UNSUPPORTED_FORMAT"
     bridge._import_zbc.assert_not_called()
+
+
+def test_bridge_duplicates_active_subtool_before_obj_import(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    asset_file = tmp_path / "asset.obj"
+    asset_file.write_bytes(b"obj")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.is_enabled.return_value = True
+    mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
+    mock_zbc.get_active_tool_path.return_value = "/ZBrush/asset"
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._import_to_scene(str(asset_file))
+
+    assert result["success"] is True
+    assert (result["subtool_count_before"], result["subtool_count_after"]) == (1, 2)
+    assert mock_zbc.press.call_args_list == [
+        call("Tool:SubTool:Duplicate"),
+        call("Tool:Import"),
+    ]
+
+
+def test_bridge_imports_into_empty_tool_without_duplicate(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    asset_file = tmp_path / "asset.obj"
+    asset_file.write_bytes(b"obj")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = False
+    mock_zbc.get_subtool_count.side_effect = [1, 1]
+    mock_zbc.get_active_tool_path.return_value = "/ZBrush/asset"
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._import_to_scene(str(asset_file))
+
+    assert result["success"] is True
+    mock_zbc.press.assert_called_once_with("Tool:Import")
+    mock_zbc.is_enabled.assert_not_called()
+
+
+def test_bridge_aborts_import_when_duplicate_fails(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    asset_file = tmp_path / "asset.obj"
+    asset_file.write_bytes(b"obj")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.is_enabled.return_value = True
+    mock_zbc.get_subtool_count.side_effect = [1, 1]
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._import_to_scene(str(asset_file))
+
+    assert result["error"] == "SUBTOOL_CREATE_FAILED"
+    mock_zbc.set_next_filename.assert_not_called()
+    mock_zbc.press.assert_called_once_with("Tool:SubTool:Duplicate")

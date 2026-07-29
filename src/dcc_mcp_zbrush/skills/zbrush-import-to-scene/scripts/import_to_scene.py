@@ -44,14 +44,27 @@ def _import(zbc: Any, file_path: str) -> Dict[str, Any]:
             "error": "FILE_NOT_FOUND",
             "imported_nodes": [],
         }
+    subtool_count_before = int(zbc.get_subtool_count())
+    if zbc.exists("Tool:SubTool:Duplicate") and zbc.is_enabled("Tool:SubTool:Duplicate"):
+        zbc.press("Tool:SubTool:Duplicate")
+        if int(zbc.get_subtool_count()) != subtool_count_before + 1:
+            return {
+                "success": False,
+                "message": "ZBrush did not create an import target subtool",
+                "error": "SUBTOOL_CREATE_FAILED",
+                "imported_nodes": [],
+            }
     zbc.set_next_filename(abs_path)
     zbc.press("Tool:Import")
+    subtool_count_after = int(zbc.get_subtool_count())
     active_path = str(zbc.get_active_tool_path() or "")
     subtool_name = active_path.rsplit("/", 1)[-1] if active_path else ""
     return {
         "success": True,
         "file_path": abs_path,
         "imported_nodes": [subtool_name] if subtool_name else [],
+        "subtool_count_before": subtool_count_before,
+        "subtool_count_after": subtool_count_after,
         "active_tool_path": active_path,
     }
 
@@ -131,6 +144,8 @@ def import_to_scene(
             "asset_id": asset_id,
             "file_path": payload.get("file_path", variant.local_path),
             "active_tool_path": payload.get("active_tool_path", ""),
+            "subtool_count_before": payload.get("subtool_count_before"),
+            "subtool_count_after": payload.get("subtool_count_after"),
         },
     )
     return zb_success(
