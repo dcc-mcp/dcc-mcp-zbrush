@@ -540,6 +540,7 @@ class TestDocsDrift:
         "zbrush-scene",
         "zbrush-subtool",
         "zbrush-brush",
+        "zbrush-viewport",
         "zbrush-interchange",
     }
 
