@@ -269,6 +269,31 @@ def test_bridge_dispatches_refine_active_subtool_on_host_thread() -> None:
     ]
 
 
+def test_bridge_dispatches_remesh_active_subtool_quietly() -> None:
+    bridge = _load_bridge_plugin()
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.query_mesh3d.side_effect = ([5_000_000.0], [48_672.0])
+    mock_zbc.get_active_tool_path.return_value = r"F:\models\fantasy-dragon-remeshed"
+    bridge._import_zbc = lambda: mock_zbc
+
+    response = bridge._handle_zbrush_request(
+        "remesh_active_subtool",
+        {"target_face_count": 50_000, "duplicate": True},
+        43,
+    )
+
+    assert response["result"]["face_count_before"] == 5_000_000
+    assert response["result"]["face_count_after"] == 48_672
+    assert response["result"]["target_face_count"] == 50_000
+    assert mock_zbc.press.call_args_list == [
+        call("Tool:SubTool:Duplicate"),
+        call("Tool:Geometry:ZRemesher"),
+    ]
+    mock_zbc.set.assert_called_once_with("Tool:Geometry:ZRemesher:Target Polygons Count", 50.0)
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
 def test_bridge_inspects_active_mesh_counts_uvs_and_bounds() -> None:
     bridge = _load_bridge_plugin()
     mock_zbc = MagicMock()
@@ -584,6 +609,7 @@ def test_bridge_captures_turntable_and_restores_transform(tmp_path) -> None:
     bridge = _load_bridge_plugin()
     mock_zbc = MagicMock()
     mock_zbc.exists.return_value = True
+    mock_zbc.get.return_value = 1
     base_transform = [480.0, 360.0, 0.0, 300.0, 300.0, 300.0, 5.0, 10.0, 175.0]
     mock_zbc.get_transform.return_value = base_transform
     state: dict[str, str] = {}
@@ -615,3 +641,17 @@ def test_bridge_captures_turntable_and_restores_transform(tmp_path) -> None:
     assert [item.args[0] for item in mock_zbc.press_key.call_args_list] == ["SHIFT+F", "SHIFT+F"]
     assert all(callable(item.args[1]) for item in mock_zbc.press_key.call_args_list)
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
+def test_bridge_rejects_turntable_capture_outside_edit_mode(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.get.return_value = 0
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._capture_turntable(str(tmp_path), [0], "dragon", False, False)
+
+    assert result["error"] == "EDIT_MODE_REQUIRED"
+    mock_zbc.get_transform.assert_not_called()
+    mock_zbc.set_next_filename.assert_not_called()

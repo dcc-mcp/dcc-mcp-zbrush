@@ -52,12 +52,18 @@ def _capture(
     bpr_render: bool,
     polyframe: bool,
 ) -> dict:
-    required = ["Document:Export"]
+    required = ["Document:Export", "Transform:Edit"]
     if bpr_render:
         required.append("Render:BPR")
     missing = [control for control in required if not zbc.exists(control)]
     if missing:
         raise RuntimeError(f"Missing required ZBrush controls: {', '.join(missing)}")
+    if not bool(zbc.get("Transform:Edit")):
+        return {
+            "success": False,
+            "message": "The active tool is not drawn in 3D Edit mode",
+            "error": "EDIT_MODE_REQUIRED",
+        }
 
     base_transform = [float(value) for value in zbc.get_transform()]
     if len(base_transform) != 9:
@@ -133,6 +139,7 @@ def capture_turntable(
     payload = run_in_zbrush(
         lambda zbc: _capture(zbc, abs_dir, normalized, prefix, bpr_render, polyframe),
         "capture_turntable",
+        allow_domain_failure=True,
         output_dir=abs_dir,
         angles=normalized,
         prefix=prefix,
@@ -140,7 +147,11 @@ def capture_turntable(
         polyframe=polyframe,
     )
     if isinstance(payload, dict) and payload.get("success") is False:
-        return payload
+        return zb_error(
+            payload.get("message", "Turntable capture failed"),
+            payload.get("error", "CAPTURE_FAILED"),
+            prompt="Draw the active tool on the document and enable 3D Edit mode before retrying.",
+        )
     return zb_success(
         f"Captured {len(payload['frames'])} turntable frame(s) in {payload['output_dir']}",
         prompt="Use the PSD frames directly or convert them into a contact sheet or animation.",
