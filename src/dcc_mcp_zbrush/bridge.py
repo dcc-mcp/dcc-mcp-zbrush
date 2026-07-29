@@ -60,7 +60,11 @@ class SocketBridge:
 
     def call(self, method: str, **params: Any) -> Any:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-        raw = self._send(json.dumps(payload).encode("utf-8"))
+        try:
+            raw = self._send(json.dumps(payload).encode("utf-8"))
+        except OSError:
+            self._connected = False
+            raise
         try:
             message = json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError as exc:

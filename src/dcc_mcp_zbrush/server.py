@@ -143,9 +143,9 @@ class ZBrushMcpServer(DccServerBase):
         from dcc_mcp_zbrush.bridge import SocketBridge  # noqa: PLC0415
 
         self._bridge = SocketBridge(host=self._socket_host, port=self._socket_port)
+        api.set_bridge(self._bridge)
         try:
             self._bridge.connect()
-            api.set_bridge(self._bridge)
             logger.info(
                 "SocketBridge connected to ZBrush plugin at %s:%d",
                 self._socket_host,

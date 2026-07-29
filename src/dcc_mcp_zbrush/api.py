@@ -34,11 +34,16 @@ def is_zbrush_available() -> bool:
 
 def get_bridge():
     """Return the sidecar bridge when running outside ZBrush."""
-    if _bridge is None or not _bridge.is_connected():
+    if _bridge is None:
         raise ZBrushNotAvailableError(
             "ZBrush sidecar bridge is not connected. "
             "Install bridge/plugin/mcp_socket_bridge.py in ZBrush or run embedded mode."
         )
+    if not _bridge.is_connected():
+        try:
+            _bridge.connect()
+        except Exception as exc:  # noqa: BLE001
+            raise ZBrushNotAvailableError(f"ZBrush sidecar bridge reconnect failed: {exc}") from exc
     return _bridge
 
 
