@@ -164,7 +164,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 ## Features (v0.2.0)
 
 - `DccServerBase` adapter with progressive skill loading
-- Bundled skills: `zbrush-scripting`, `zbrush-scene`, `zbrush-subtool`, `zbrush-interchange`
+- Bundled skills: `zbrush-scripting`, `zbrush-scene`, `zbrush-subtool`, `zbrush-brush`, `zbrush-interchange`
 - In-process executor for ZBrush's embedded Python VM
 - Optional socket bridge plugin for sidecar deployments
 - Top-level DCC MCP palette registered through `zbrush.commands`
@@ -194,6 +194,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 | `zbrush-scripting` | `execute_python`, `get_session_info` |
 | `zbrush-scene` | `get_scene_info`, `list_subtools` |
 | `zbrush-subtool` | `select_subtool`, `get_subtool_status` |
+| `zbrush-brush` | `create_wrinkle_brush`, `load_wrinkle_brush` |
 | `zbrush-interchange` | `export_active_subtool_obj` |
 
 ## Path concepts

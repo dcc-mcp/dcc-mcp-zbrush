@@ -2,7 +2,8 @@ tools:
   - name: import_to_scene
     description: >-
       Import an OBJ asset into ZBrush, adding a subtool when the active tool
-      already contains editable geometry.
+      already contains editable geometry. Suppresses scripted action drawing
+      and UI redraws during import.
       Accepts an AssetDescriptor-shaped payload (asset_id + variants with
       local_path/format fields). Returns an ImportToSceneResult with the
       list of imported subtool names and any non-fatal warnings.

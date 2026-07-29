@@ -21,5 +21,5 @@ metadata:
 # zbrush-interchange
 
 Typed mesh export using the official SDK pattern (`set_next_filename` +
-`Tool:Export`) while scripted UI action feedback is suppressed and reliably
-restored.
+`Tool:Export`) while scripted action drawing and UI updates are suppressed and
+reliably restored.

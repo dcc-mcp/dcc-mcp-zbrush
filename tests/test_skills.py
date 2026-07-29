@@ -16,6 +16,7 @@ _SKILL_DIRS = (
     "zbrush-scripting",
     "zbrush-scene",
     "zbrush-subtool",
+    "zbrush-brush",
     "zbrush-interchange",
     "zbrush-import-to-scene",
 )
@@ -63,13 +64,22 @@ def test_skills_index_exists() -> None:
 
 
 def test_quiet_ui_actions_restore_feedback_and_normalize_subtool_paths() -> None:
-    from dcc_mcp_zbrush._skill_host import quiet_ui_actions, subtool_name_from_path
+    from dcc_mcp_zbrush._skill_host import quiet_ui_actions, run_quiet_ui, subtool_name_from_path
 
     mock_zbc = MagicMock()
     with pytest.raises(RuntimeError, match="stop"):
         with quiet_ui_actions(mock_zbc):
             raise RuntimeError("stop")
 
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+    action = MagicMock()
+    mock_zbc.freeze.side_effect = lambda callback: callback()
+    mock_zbc.show_actions.reset_mock()
+    run_quiet_ui(mock_zbc, action)
+
+    action.assert_called_once_with()
+    mock_zbc.freeze.assert_called_once_with(action)
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
     assert subtool_name_from_path(r"F:\models\horse_statue_01") == "horse_statue_01"
     assert subtool_name_from_path("/ZBrush/marble_bust_01") == "marble_bust_01"
@@ -131,3 +141,50 @@ def test_refine_active_subtool_uses_typed_zbrush_operations() -> None:
         call("Tool:Deformation:Polish", 12.0),
         call("Tool:Deformation:Inflate", 1.5),
     ]
+
+
+def test_create_wrinkle_brush_saves_non_empty_zbp_quietly(tmp_path) -> None:
+    mod = _load_script("zbrush-brush", "wrinkle_brush.py")
+    output = tmp_path / "WrinkleCrease.ZBP"
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.get.side_effect = lambda path: mod._SETTINGS[path]
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Brush:Save As":
+            Path(state["path"]).write_bytes(b"zbp")
+
+    mock_zbc.press.side_effect = press
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.create_wrinkle_brush(output_path=str(output))
+
+    assert result["success"] is True
+    assert output.read_bytes() == b"zbp"
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+    assert call("Brush:DamStandard") in mock_zbc.press.call_args_list
+    assert call("Brush:Clone") in mock_zbc.press.call_args_list
+
+
+def test_load_wrinkle_brush_reapplies_global_draw_settings(tmp_path) -> None:
+    mod = _load_script("zbrush-brush", "wrinkle_brush.py")
+    brush = tmp_path / "WrinkleCrease.ZBP"
+    brush.write_bytes(b"zbp")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    mock_zbc.get.side_effect = lambda path: mod._SETTINGS[path]
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.load_wrinkle_brush(brush_path=str(brush))
+
+    assert result["success"] is True
+    mock_zbc.set_next_filename.assert_called_once_with(str(brush))
+    assert call("Brush:Load Brush") in mock_zbc.press.call_args_list
+    assert call("Draw:Z Intensity", 18.0) in mock_zbc.set.call_args_list
+    assert call("Draw:Focal Shift", -70.0) in mock_zbc.set.call_args_list

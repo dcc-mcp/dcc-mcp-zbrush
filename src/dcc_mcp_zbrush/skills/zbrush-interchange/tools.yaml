@@ -2,7 +2,8 @@ tools:
   - name: export_active_subtool_obj
     description: >-
       Export the currently active subtool to an OBJ file on disk. Overwrites an
-      existing file at output_path. Requires the parent directory to exist.
+      existing file at output_path. Suppresses scripted action drawing and UI
+      redraws during export. Requires the parent directory to exist.
     source_file: scripts/export_active_subtool_obj.py
     execution: sync
     affinity: any

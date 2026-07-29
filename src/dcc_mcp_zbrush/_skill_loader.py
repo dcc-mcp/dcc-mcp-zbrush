@@ -19,7 +19,7 @@ STAGES: Tuple[str, ...] = (
 STAGE_SKILLS: dict[str, Tuple[str, ...]] = {
     "bootstrap": ("zbrush-scripting",),
     "scene": ("zbrush-scene",),
-    "authoring": ("zbrush-subtool",),
+    "authoring": ("zbrush-subtool", "zbrush-brush"),
     "interchange": ("zbrush-interchange",),
     "pipeline": ("zbrush-import-to-scene",),
 }

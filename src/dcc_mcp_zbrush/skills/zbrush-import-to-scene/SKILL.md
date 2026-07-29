@@ -27,6 +27,7 @@ preferred (or first available) variant, and uses the ZBrush SDK
 `set_next_filename` + `Tool:Import` pattern to load the geometry. When the
 active tool already contains editable geometry, it duplicates the active
 subtool first so the existing mesh is preserved. Scripted UI action feedback
-is suppressed during the import and reliably restored afterward.
+and UI updates are suppressed during the import and reliably restored
+afterward.
 
 FBX import remains interactive in ZBrush and is rejected before host dispatch.

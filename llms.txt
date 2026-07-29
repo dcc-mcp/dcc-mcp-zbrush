@@ -83,6 +83,7 @@ MCP endpoint: `http://127.0.0.1:9765/mcp`
 |zbrush-scripting|execute_python, get_session_info|
 |zbrush-scene|get_scene_info, list_subtools|
 |zbrush-subtool|—|
+|zbrush-brush|create_wrinkle_brush, load_wrinkle_brush|
 |zbrush-interchange|—|
 
 ## Health check
