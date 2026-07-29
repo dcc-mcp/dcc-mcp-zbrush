@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.19](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.18...v0.2.19) (2026-07-29)
+
+
+### Features
+
+* add unified DCC MCP menu ([2074ad5](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/2074ad527b0484228f0774dee4cbc7ef1d604e7a))
+
+
+### Bug Fixes
+
+* preserve existing subtools during import ([#53](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/53)) ([afef9eb](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/afef9ebf80cf5ab76247fda89f97c7668a63fcd2))
+* reject interactive FBX imports ([#52](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/52)) ([9d22c70](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/9d22c7071bcf07ae7f93095f8fa5defa18c5f103))
+* suppress import and export UI feedback ([#54](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/54)) ([79bf38e](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/79bf38ef00da2162c3f47e3df112f6b5efe6ac35))
+
+
+### Documentation
+
+* align agent workflow and branding ([70e56f9](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/70e56f9846d87ca961cbf47ae5f847b0a423ac90))
+* document CLI install and updates ([b6fbc9b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/b6fbc9b13139419b8abaa626f86a4043224a9522))
+
 ## [0.2.18](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.17...v0.2.18) (2026-07-16)
 
 
