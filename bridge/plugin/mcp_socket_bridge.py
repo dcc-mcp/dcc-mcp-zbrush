@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import math
 import ntpath
 import os
 import queue
@@ -86,6 +87,13 @@ def _handle_zbrush_request(method: Any, params: Dict[str, Any], req_id: Any) -> 
             result = _load_wrinkle_brush(str(params.get("brush_path", "")))
         elif method == "export_active_subtool_obj":
             result = _export_active_subtool_obj(str(params.get("output_path", "")))
+        elif method == "capture_turntable":
+            result = _capture_turntable(
+                str(params.get("output_dir", "")),
+                params.get("angles"),
+                str(params.get("prefix", "zbrush-turntable")),
+                bool(params.get("bpr_render", True)),
+            )
         elif method == "import_to_scene":
             result = _import_to_scene(str(params.get("file_path", "")))
         else:
@@ -371,6 +379,83 @@ def _export_active_subtool_obj(output_path: str) -> Dict[str, Any]:
         "active_tool_path": path,
         "subtool_name": _subtool_name(path),
     }
+
+
+def _capture_turntable(
+    output_dir: str,
+    angles: Any,
+    prefix: str,
+    bpr_render: bool,
+) -> Dict[str, Any]:
+    if not output_dir:
+        return {"success": False, "message": "output_dir must not be empty", "error": "OUTPUT_DIR_MISSING"}
+    abs_dir = os.path.abspath(output_dir)
+    if not os.path.isdir(abs_dir):
+        return {
+            "success": False,
+            "message": f"Output directory does not exist: {abs_dir}",
+            "error": "OUTPUT_DIR_MISSING",
+            "output_dir": abs_dir,
+        }
+    if not prefix or os.path.basename(prefix) != prefix:
+        return {"success": False, "message": "prefix must be a file name", "error": "INVALID_PREFIX"}
+    try:
+        normalized_angles = [float(angle) for angle in angles]
+    except (TypeError, ValueError):
+        return {"success": False, "message": "angles must be a list of numbers", "error": "INVALID_ANGLES"}
+    if not normalized_angles or len(normalized_angles) > 72 or any(not math.isfinite(a) for a in normalized_angles):
+        return {"success": False, "message": "angles must contain 1 to 72 finite values", "error": "INVALID_ANGLES"}
+
+    zbc = _import_zbc()
+    required = ["Document:Export"]
+    if bpr_render:
+        required.append("Render:BPR")
+    _require_controls(zbc, *required)
+    base_transform = [float(value) for value in zbc.get_transform()]
+    if len(base_transform) != 9:
+        raise RuntimeError("ZBrush returned an invalid tool transform")
+
+    staged: list[tuple[str, str, float]] = []
+    try:
+        with _quiet_ui_actions(zbc):
+            try:
+                for index, angle in enumerate(normalized_angles):
+                    zbc.set_transform(
+                        x_rotate=base_transform[6],
+                        y_rotate=angle,
+                        z_rotate=base_transform[8],
+                    )
+                    zbc.update(redraw_ui=True)
+                    if bpr_render:
+                        zbc.press("Render:BPR")
+                    final_path = os.path.join(abs_dir, f"{prefix}-{index:03d}.psd")
+                    stage_path = os.path.join(
+                        abs_dir,
+                        f".{prefix}-{index:03d}-{os.getpid()}-{time.time_ns()}.psd",
+                    )
+                    staged.append((stage_path, final_path, angle))
+                    zbc.set_next_filename(stage_path)
+                    zbc.press("Document:Export")
+                    if not os.path.isfile(stage_path) or os.path.getsize(stage_path) == 0:
+                        raise RuntimeError(f"ZBrush did not export a non-empty document frame: {final_path}")
+            finally:
+                zbc.set_transform(*base_transform)
+                zbc.update(redraw_ui=True)
+
+        frames = []
+        for stage_path, final_path, angle in staged:
+            os.replace(stage_path, final_path)
+            frames.append({"angle": angle, "path": final_path, "bytes": os.path.getsize(final_path)})
+        return {
+            "output_dir": abs_dir,
+            "frames": frames,
+            "base_transform": base_transform,
+            "bpr_render": bpr_render,
+        }
+    finally:
+        for stage_path, _final_path, _angle in staged:
+            if os.path.isfile(stage_path):
+                os.remove(stage_path)
 
 
 def _import_to_scene(file_path: str) -> Dict[str, Any]:

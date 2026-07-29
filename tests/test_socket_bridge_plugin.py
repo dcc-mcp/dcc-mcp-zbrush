@@ -349,3 +349,32 @@ def test_bridge_exports_without_drawing_ui_actions(tmp_path) -> None:
     mock_zbc.press.assert_called_once_with("Tool:Export")
     mock_zbc.freeze.assert_called_once()
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
+
+
+def test_bridge_captures_turntable_and_restores_transform(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    base_transform = [480.0, 360.0, 0.0, 300.0, 300.0, 300.0, 5.0, 10.0, 175.0]
+    mock_zbc.get_transform.return_value = base_transform
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Document:Export":
+            Path(state["path"]).write_bytes(b"psd")
+
+    mock_zbc.press.side_effect = press
+    bridge._import_zbc = lambda: mock_zbc
+
+    response = bridge._handle_zbrush_request(
+        "capture_turntable",
+        {"output_dir": str(tmp_path), "angles": [0, 90], "prefix": "dragon", "bpr_render": True},
+        46,
+    )
+
+    assert [frame["angle"] for frame in response["result"]["frames"]] == [0.0, 90.0]
+    assert (tmp_path / "dragon-000.psd").read_bytes() == b"psd"
+    assert (tmp_path / "dragon-001.psd").read_bytes() == b"psd"
+    assert mock_zbc.set_transform.call_args_list[-1] == call(*base_transform)
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]

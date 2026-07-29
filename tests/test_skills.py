@@ -17,6 +17,7 @@ _SKILL_DIRS = (
     "zbrush-scene",
     "zbrush-subtool",
     "zbrush-brush",
+    "zbrush-viewport",
     "zbrush-interchange",
     "zbrush-import-to-scene",
 )
@@ -188,3 +189,35 @@ def test_load_wrinkle_brush_reapplies_global_draw_settings(tmp_path) -> None:
     assert call("Brush:Load Brush") in mock_zbc.press.call_args_list
     assert call("Draw:Z Intensity", 18.0) in mock_zbc.set.call_args_list
     assert call("Draw:Focal Shift", -70.0) in mock_zbc.set.call_args_list
+
+
+def test_capture_turntable_exports_frames_and_restores_transform(tmp_path) -> None:
+    mod = _load_script("zbrush-viewport", "capture_turntable.py")
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = True
+    base_transform = [480.0, 360.0, 0.0, 300.0, 300.0, 300.0, 5.0, 10.0, 175.0]
+    mock_zbc.get_transform.return_value = base_transform
+    state: dict[str, str] = {}
+    mock_zbc.set_next_filename.side_effect = lambda path: state.update(path=path)
+
+    def press(item_path: str) -> None:
+        if item_path == "Document:Export":
+            Path(state["path"]).write_bytes(b"psd")
+
+    mock_zbc.press.side_effect = press
+    with patch(
+        "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+        lambda embedded, *_a, **_k: embedded(mock_zbc),
+    ):
+        result = mod.capture_turntable(
+            output_dir=str(tmp_path),
+            angles=[0, 90],
+            prefix="dragon",
+        )
+
+    assert result["success"] is True
+    assert [frame["angle"] for frame in result["context"]["frames"]] == [0.0, 90.0]
+    assert (tmp_path / "dragon-000.psd").read_bytes() == b"psd"
+    assert (tmp_path / "dragon-001.psd").read_bytes() == b"psd"
+    assert mock_zbc.set_transform.call_args_list[-1] == call(*base_transform)
+    assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]

@@ -1,0 +1,65 @@
+tools:
+  - name: capture_turntable
+    description: >-
+      Rotate the active tool around the viewport Y axis and export one PSD
+      document frame per angle. Existing frame files with the same prefix are
+      replaced only after each staged export succeeds. Restores the original
+      tool transform and suppresses scripted action feedback.
+    source_file: scripts/capture_turntable.py
+    execution: sync
+    job_strategy: monolithic
+    affinity: any
+    enforce_thread_affinity: true
+    timeout_hint_secs: 180
+    group: core
+    annotations:
+      destructive_hint: true
+      read_only_hint: false
+      idempotent_hint: true
+    input_schema:
+      type: object
+      required: [output_dir]
+      properties:
+        output_dir:
+          type: string
+          description: Existing directory for exported PSD frames.
+        angles:
+          type: array
+          minItems: 1
+          maxItems: 72
+          default: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+          description: Viewport Y-axis angles in degrees.
+          items:
+            type: number
+            minimum: -360
+            maximum: 360
+        prefix:
+          type: string
+          default: zbrush-turntable
+          description: File-name prefix without directory separators.
+        bpr_render:
+          type: boolean
+          default: true
+          description: Run ZBrush BPR before exporting each frame.
+    output_schema:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        context:
+          type: object
+    call_examples:
+      - arguments:
+          output_dir: "C:/captures/dragon"
+          angles: [0, 45, 90, 135, 180, 225, 270, 315]
+          prefix: dragon
+          bpr_render: true
+        note: Capture an eight-view BPR turntable.
+    next-tools:
+      on-success:
+        - zbrush_scene__get_scene_info
+      on-failure:
+        - zbrush_scripting__get_session_info
+
