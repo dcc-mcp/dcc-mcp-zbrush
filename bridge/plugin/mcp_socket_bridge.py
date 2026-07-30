@@ -17,6 +17,7 @@ import ntpath
 import os
 import queue
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -31,6 +32,8 @@ _REQUEST_QUEUE: "queue.Queue[Dict[str, Any]]" = queue.Queue()
 _BRIDGE_THREAD: Optional[threading.Thread] = None
 _REQUEST_STATE_LOCK = threading.Lock()
 _ACTIVE_REQUEST: Optional[Dict[str, Any]] = None
+_PUMP_TIMER_ID = 0
+_PUMP_TIMER_CALLBACK: Any = None
 
 
 def _mark(message: str) -> None:
@@ -891,8 +894,41 @@ def _run_main_thread_pump() -> None:
         time.sleep(_UI_POLL_SECONDS)
 
 
+def _install_main_thread_pump() -> None:
+    """Drain SDK work from ZBrush's Windows UI thread without blocking it."""
+    global _PUMP_TIMER_CALLBACK, _PUMP_TIMER_ID
+
+    if _PUMP_TIMER_ID:
+        return
+    if sys.platform != "win32":
+        _run_main_thread_pump()
+        return
+
+    import ctypes  # noqa: PLC0415
+
+    def on_timer(_window: Any, _message: int, _timer_id: int, _tick: int) -> None:
+        try:
+            _drain_request_queue()
+        except BaseException:
+            _mark("main-thread timer failed\n" + traceback.format_exc())
+
+    callback_type = ctypes.WINFUNCTYPE(
+        None,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.c_size_t,
+        ctypes.c_ulong,
+    )
+    callback = callback_type(on_timer)
+    timer_id = ctypes.windll.user32.SetTimer(None, 0, max(1, round(_UI_POLL_SECONDS * 1000)), callback)
+    if not timer_id:
+        raise OSError("ZBrush main-thread timer registration failed")
+    _PUMP_TIMER_CALLBACK = callback
+    _PUMP_TIMER_ID = int(timer_id)
+
+
 def _start_bridge(host: str, port: int) -> threading.Thread:
-    """Start the listener and run the ZBrush-native pump on the main thread."""
+    """Start the listener and install the ZBrush main-thread request pump."""
     global _BRIDGE_THREAD
 
     if _BRIDGE_THREAD is None or not _BRIDGE_THREAD.is_alive():
@@ -903,7 +939,7 @@ def _start_bridge(host: str, port: int) -> threading.Thread:
             name="dcc-mcp-zbrush-socket-bridge",
         )
         _BRIDGE_THREAD.start()
-    _run_main_thread_pump()
+    _install_main_thread_pump()
     return _BRIDGE_THREAD
 
 
