@@ -120,29 +120,43 @@ def test_bridge_ping_bypasses_main_thread_queue_and_reports_busy_state() -> None
     bridge._dispatch_request.assert_not_called()
 
 
-def test_main_thread_pump_drains_requests_and_updates_zbrush() -> None:
+def test_bridge_start_schedules_main_thread_pump_without_blocking(monkeypatch) -> None:
     bridge = _load_bridge_plugin()
-    calls: list[tuple[str, object]] = []
+    bridge_thread = MagicMock()
+    bridge_thread.is_alive.return_value = True
+    bridge._BRIDGE_THREAD = bridge_thread
+    install_pump = MagicMock()
+    monkeypatch.setattr(bridge, "_install_main_thread_pump", install_pump, raising=False)
+    monkeypatch.setattr(
+        bridge,
+        "_run_main_thread_pump",
+        MagicMock(side_effect=AssertionError("startup must return control to ZBrush")),
+    )
 
-    class _StopPump(Exception):
-        pass
+    assert bridge._start_bridge("127.0.0.1", 9910) is bridge_thread
+    install_pump.assert_called_once_with()
 
-    class _ZBrushCommands:
-        @staticmethod
-        def update(*, redraw_ui: bool) -> None:
-            calls.append(("update", redraw_ui))
-            raise _StopPump
 
-    bridge._REQUEST_QUEUE.put({"payload": {"id": 1}, "event": threading.Event()})
-    bridge._handle_request = lambda payload: calls.append(("request", payload)) or {}
-    bridge._import_zbc = lambda: _ZBrushCommands()
+def test_windows_main_thread_timer_drains_requests(monkeypatch) -> None:
+    import ctypes
 
-    try:
-        bridge._run_main_thread_pump()
-    except _StopPump:
-        pass
+    bridge = _load_bridge_plugin()
+    drain = MagicMock()
+    user32 = MagicMock()
+    user32.SetTimer.return_value = 42
+    monkeypatch.setattr(bridge, "_drain_request_queue", drain)
+    monkeypatch.setattr(bridge.sys, "platform", "win32")
+    monkeypatch.setattr(ctypes, "WINFUNCTYPE", lambda *_args: lambda callback: callback, raising=False)
+    monkeypatch.setattr(ctypes, "windll", MagicMock(user32=user32), raising=False)
 
-    assert calls == [("request", {"id": 1}), ("update", True)]
+    bridge._install_main_thread_pump()
+    callback = user32.SetTimer.call_args.args[3]
+    callback(None, 0, 42, 0)
+
+    assert bridge._PUMP_TIMER_ID == 42
+    assert bridge._PUMP_TIMER_CALLBACK is callback
+    user32.SetTimer.assert_called_once_with(None, 0, 20, callback)
+    drain.assert_called_once_with()
 
 
 def test_bridge_bootstraps_when_loaded_by_zbrush(monkeypatch) -> None:
