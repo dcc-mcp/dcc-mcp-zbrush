@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.24](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.23...v0.2.24) (2026-07-30)
+
+
+### Bug Fixes
+
+* return ZBrush UI control after startup ([#66](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/66)) ([57ed585](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/57ed5853a80be9c2b37ce7bcb31b49f93f683ec2))
+
 ## [0.2.23](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.22...v0.2.23) (2026-07-29)
 
 
