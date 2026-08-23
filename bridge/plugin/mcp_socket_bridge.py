@@ -45,6 +45,26 @@ def _mark(message: str) -> None:
         stream.write(message + "\n")
 
 
+def _capture_bootstrap_error(stage: str, error: BaseException) -> None:
+    """Persist a bounded JSONL startup error for ``dcc-mcp-zbrush verify``."""
+    configured = os.environ.get("DCC_MCP_ZBRUSH_BOOTSTRAP_ERRORS", "").strip()
+    default_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = configured or os.path.join(default_root, ".dcc-mcp", "bootstrap-errors.jsonl")
+    payload = {
+        "timestamp": time.time(),
+        "stage": stage,
+        "reason": str(error),
+        "exception_type": type(error).__name__,
+    }
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, sort_keys=True) + "\n")
+    except BaseException:
+        # Startup error reporting must not hide the original bootstrap failure.
+        pass
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default)).strip()
     try:
@@ -965,8 +985,9 @@ def bootstrap_bridge() -> Optional[threading.Thread]:
         _mark("menu registration failed\n" + traceback.format_exc())
     try:
         bridge_thread = _start_bridge(host, port)
-    except BaseException:
+    except BaseException as exc:
         _mark("bootstrap failed\n" + traceback.format_exc())
+        _capture_bootstrap_error("sidecar_bootstrap", exc)
         raise
     _mark(f"bootstrap started {host}:{port}")
     return bridge_thread

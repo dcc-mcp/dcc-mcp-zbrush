@@ -6,7 +6,7 @@
 
 |Mode|When to use|Stack|
 |---|---|---|
-|**Sidecar + socket plugin (recommended)**|Production GUI and CI clients|External Python → TCP :9876 → <Asset Directory>/Python/init.py → zbrush.commands|
+|**Sidecar + socket plugin (recommended)**|Production GUI and CI clients|External Python → TCP :9876 → receipt-managed dedicated bridge → zbrush.commands|
 |**Embedded (advanced)**|Pure-Python experiments only|Python plugin inside ZBrush → zbrush.commands|
 
 ## Distribution artifacts
@@ -15,27 +15,29 @@ There are three independent distribution channels. Each covers a different scope
 
 |Artifact|Scope|Install command|
 |---|---|---|
-|**PyPI wheel** (`dcc-mcp-zbrush`)|Python package (src/dcc_mcp_zbrush/) — MCP server, skills, bridge client|`pip install dcc-mcp-zbrush`|
-|**Plugin ZIP**|ZBrush plugin files — auto-start package, socket bridge, install scripts|`Download from latest release and run install-windows.ps1 or install-macos.sh`|
+|**PyPI wheel** (`dcc-mcp-zbrush`)|MCP server, skills, bridge client, and lifecycle CLI|`python -m pip install "dcc-mcp-zbrush==<version>"`|
+|**Plugin ZIP**|Fixed-version ZBrush host payload with SHA-256 provenance|`Resolved and verified by dcc-mcp-zbrush install`|
 |**Repo source**|Everything above + bridge/plugin/ raw sources + tests + tools|`git clone https://github.com/dcc-mcp/dcc-mcp-zbrush.git`|
 
-The wheel does not bundle bridge/plugin/ — that directory is only in the plugin ZIP or the repo checkout.
+Use the receipt-driven lifecycle; never copy a bridge over the shared Python/init.py file.
 
 ## Install steps (recommended sidecar)
 
-### Recommended sidecar install (PyPI + plugin ZIP)
+### Recommended receipt-driven sidecar install
 
-1. pip install dcc-mcp-zbrush
-2. Download plugin ZIP and run installer in sidecar mode
-3. Verify <Asset Directory>/Python/init.py exists
-4. Restart ZBrush
-5. Run dcc-mcp-zbrush --mode sidecar
+1. python -m pip install "dcc-mcp-zbrush==<version>"
+2. Set ZBRUSH_USER_ASSETS_DIR to the explicit Asset Directory
+3. Plan with dcc-mcp-zbrush install --version <version> --dcc-path <ZBrush-path> --python python --dry-run --json
+4. Apply the reviewed plan with --yes --json
+5. Restart ZBrush and run dcc-mcp-zbrush verify with the same path flags
+6. Run dcc-mcp-zbrush --mode sidecar
 
 ### Sidecar from source checkout
 
 1. pip install -e ".[dev]"
-2. Copy bridge/plugin/mcp_socket_bridge.py to <Asset Directory>/Python/init.py
-3. Restart ZBrush
+2. Build the plugin ZIP and exercise it through the same lifecycle
+3. Never overwrite the shared Python/init.py file
+4. Restart ZBrush and run verify
 
 MCP endpoint: `http://127.0.0.1:9765/mcp`
 
@@ -84,9 +86,15 @@ MCP endpoint: `http://127.0.0.1:9765/mcp`
 |zbrush-scene|get_scene_info, list_subtools|
 |zbrush-subtool|—|
 |zbrush-brush|create_wrinkle_brush, load_wrinkle_brush|
+|zbrush-viewport|capture_turntable|
 |zbrush-interchange|—|
+|zbrush-import-to-scene|import_to_scene|
 
 ## Health check
+
+```bash
+dcc-mcp-zbrush verify --version <version> --dcc-path <ZBrush-path> --python python --json
+```
 
 ```bash
 dcc-mcp-cli list  # discovers the exact OS-assigned instance URL
@@ -106,6 +114,8 @@ SocketBridge.connect()  # sends JSON-RPC ping → expects {"ok": true}
 |---|---|---|
 |Connection refused|ZBrush not running|Start ZBrush|
 |MCP endpoint unreachable|Wrong mode or stale direct URL|Start dcc-mcp-zbrush --mode sidecar, then run dcc-mcp-cli list; socket bridge remains on 9876|
-|ZBrushNotAvailableError|Socket bridge plugin not installed|Copy mcp_socket_bridge.py to <Asset Directory>/Python/init.py and restart ZBrush|
+|ZBrushNotAvailableError|Socket bridge is not ready|Run lifecycle status, restart ZBrush, then run verify|
+|partial install|Receipt or managed payload drift|Fail closed; inspect the receipt and backup before retrying|
+|checksum mismatch|Payload is not the fixed official release asset|Do not bypass; select a fixed official version and retry|
 |subprocess fails|ZBrush Python VM does not support subprocess|Use execute_python skill instead|
 |ZBrush version < 2026.1|No Python SDK available|Upgrade to ZBrush 2026.1+|
