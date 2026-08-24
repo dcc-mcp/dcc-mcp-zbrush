@@ -112,7 +112,7 @@ jobs:
             dist/plugin/SHA256SUMS
 
   smoke-test:
-    name: Smoke Test (clean venv + bootstrap dry-run + docs drift)
+    name: Smoke Test (clean venv + lifecycle schema + docs drift)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -161,21 +161,17 @@ jobs:
           print(f'Plugin ZIP OK: {len(names)} entries')
           "
 
-      - name: Lifecycle dry-run — embedded and sidecar modes
-        run: |
-          mkdir -p "/tmp/ZBrush 2026.1" /tmp/zbrush-assets
-          touch "/tmp/ZBrush 2026.1/ZBrush"
-          /tmp/smoke-venv/bin/dcc-mcp-zbrush install --mode embedded --dcc-path "/tmp/ZBrush 2026.1/ZBrush" --asset-dir /tmp/zbrush-assets --python /tmp/smoke-venv/bin/python --dry-run --json
-          /tmp/smoke-venv/bin/dcc-mcp-zbrush install --mode sidecar --dcc-path "/tmp/ZBrush 2026.1/ZBrush" --asset-dir /tmp/zbrush-assets --python /tmp/smoke-venv/bin/python --dry-run --json
-
       - name: Install test dependencies
-        run: pip install pytest pyyaml
+        run: /tmp/smoke-venv/bin/pip install pytest pyyaml jsonschema
 
       - name: Run smoke tests (unit + structure + docs drift)
-        run: pytest tests/test_smoke.py -v --tb=short
+        run: /tmp/smoke-venv/bin/python -m pytest tests/test_smoke.py -v --tb=short
+
+      - name: Validate canonical lifecycle schema without impersonating ZBrush
+        run: /tmp/smoke-venv/bin/python -m pytest tests/test_install_lifecycle.py::test_public_install_plan_matches_exact_core_2320_draft_schema -v --tb=short
 
   lifecycle-smoke:
-    name: Lifecycle round-trip (Windows)
+    name: Lifecycle transactions (Windows)
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -190,30 +186,8 @@ jobs:
           python -m pip install -e ".[dev]"
           python tools/pack_plugin.py --output dist/plugin
 
-      - name: Install, status, verify unavailable, and uninstall
-        shell: pwsh
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $false
-          $DccPath = Join-Path $env:RUNNER_TEMP "ZBrush 2026.1\ZBrush.exe"
-          $AssetDir = Join-Path $env:RUNNER_TEMP "ZBrushData2026\ZStartup"
-          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DccPath) | Out-Null
-          New-Item -ItemType File -Force -Path $DccPath | Out-Null
-          New-Item -ItemType Directory -Force -Path (Join-Path $AssetDir "Python") | Out-Null
-          $InitPath = Join-Path $AssetDir "Python\init.py"
-          Set-Content -LiteralPath $InitPath -Value "# studio startup" -NoNewline
-          $OriginalHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $InitPath).Hash
-          $Archive = (Get-ChildItem -LiteralPath "dist/plugin" -Filter "*.zip").FullName
-          $Digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
-          dcc-mcp-zbrush install --dcc-path $DccPath --asset-dir $AssetDir --python (Get-Command python).Source --plugin-archive $Archive --sha256 $Digest --yes --json
-          if ($LASTEXITCODE -ne 0) { throw "install failed" }
-          dcc-mcp-zbrush status --dcc-path $DccPath --asset-dir $AssetDir --python (Get-Command python).Source --json
-          if ($LASTEXITCODE -ne 0) { throw "status failed" }
-          dcc-mcp-zbrush verify --dcc-path $DccPath --asset-dir $AssetDir --python (Get-Command python).Source --json
-          if ($LASTEXITCODE -ne 40) { throw "verify should report stable verify-failure exit 40" }
-          dcc-mcp-zbrush uninstall --dcc-path $DccPath --asset-dir $AssetDir --python (Get-Command python).Source --yes --json
-          if ($LASTEXITCODE -ne 0) { throw "uninstall failed" }
-          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $InitPath).Hash -ne $OriginalHash) { throw "shared init.py was not restored" }
-          if (Test-Path -LiteralPath (Join-Path $AssetDir ".dcc-mcp\receipts\zbrush.json")) { throw "receipt was not removed" }
+      - name: Exercise bounded transaction, rollback, ownership, and schema regressions
+        run: python -m pytest tests/test_install_lifecycle.py -v --tb=short
 
   docs-drift:
     name: Docs Drift Check

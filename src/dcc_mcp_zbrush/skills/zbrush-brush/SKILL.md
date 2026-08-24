@@ -5,7 +5,7 @@ description: >-
   ZBrush. Use when you need a DamStandard-based ZBP preset with quiet file
   handling and consistent crease, LazyMouse, and ZSub settings.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.19.45+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.20.14+"
 allowed-tools: Bash Read Write
 metadata:
   dcc-mcp:

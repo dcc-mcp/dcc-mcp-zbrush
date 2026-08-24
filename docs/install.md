@@ -2,11 +2,11 @@
 
 This is the canonical install SOP for `dcc-mcp-zbrush`. ZBrush 2026.1 or
 newer is required. The external sidecar requires Python 3.10 or newer and
-`dcc-mcp-core >= 0.19.45`.
+`dcc-mcp-core >= 0.20.14`.
 
-Supported host platforms are Windows and macOS. Linux can build the wheel,
-inspect a dry-run plan, and run unit tests, but it cannot install or verify a
-ZBrush host.
+Supported host platforms are Windows and macOS. Linux can build the wheel and
+run contract tests, but it cannot authenticate, install, or verify a ZBrush
+host.
 
 ## Install the wheel
 
@@ -37,10 +37,18 @@ never replaces that shared file. Existing bytes are backed up before the
 staged atomic replacement and recorded in
 `<AssetDir>/.dcc-mcp/receipts/zbrush.json`.
 
+Preflight accepts only a native Maxon-signed ZBrush product with canonical
+2026.1+ version metadata; a path or filename alone is never treated as a host.
 The installer resolves only the fixed `v<version>` release asset, requires its
 GitHub SHA-256 provenance, verifies the bytes before they enter the cache, and
 rejects unsafe ZIP members. Invalid cached payloads are removed; obsolete
 version cache directories are pruned after a successful install.
+
+An applied install or upgrade returns exit `50` while the candidate is staged.
+The receipt retains immutable recovery snapshots until `verify` binds the
+exact ZBrush executable, PID/start identity, bridge instance, endpoint, loaded
+module origins, and version. Verification commits the candidate only after all
+bindings succeed; otherwise it restores the exact prior installation.
 
 ## Status and verification
 
@@ -65,8 +73,10 @@ dcc-mcp-cli list
 ```
 
 Embedded mode is advanced and Python-only. It does not load the Core native
-wheel into ZBrush's embedded VM. Use `--mode embedded`; verification uses the
-registered ZBrush instance and `zbrush_scripting__get_session_info`.
+wheel into ZBrush's embedded VM. Use `--mode embedded`; verification selects
+one registry instance and rejects a probe unless its PID/start identity,
+endpoint, product bytes, adapter module, and `zbrush.commands` origin all match
+the receipt.
 
 ## Upgrade and uninstall
 
@@ -77,9 +87,12 @@ dcc-mcp-zbrush upgrade --version <new-version> --dcc-path "<ZBrush path>" --pyth
 dcc-mcp-zbrush upgrade --version <new-version> --dcc-path "<ZBrush path>" --python python --yes --json
 ```
 
-Uninstall is receipt-driven. It restores the exact pre-install `init.py` when
-unchanged; if another tool edited that file after installation, it removes
-only the unambiguous managed block and preserves the later edits.
+Uninstall is receipt-driven and transactional. It restores the exact
+pre-install `init.py` when unchanged; if another tool edited that file after
+installation, it removes only the unambiguous managed block and preserves the
+later edits. Embedded trees record typed file/directory/link ownership, so
+operator-created files remain in place. Any failed removal restores the
+receipt, payload, shared startup state, and backups before returning.
 
 ```bash
 dcc-mcp-zbrush uninstall --version <version> --dcc-path "<ZBrush path>" --python python --dry-run --json
@@ -89,7 +102,7 @@ dcc-mcp-zbrush uninstall --version <version> --dcc-path "<ZBrush path>" --python
 ## JSON and exit codes
 
 All lifecycle verbs accept `--json`, `--yes`, `--dry-run`, `--dcc-path`, and
-`--python`. JSON responses use schema `1.0`; every next step has `id`,
+`--python`. JSON responses use Install SOP schema version `1`; every next step has `id`,
 `description`, `why`, and exactly one of `command` or `file_edit`.
 
 | Exit | Meaning |
@@ -99,7 +112,7 @@ All lifecycle verbs accept `--json`, `--yes`, `--dry-run`, `--dcc-path`, and
 | `20` | Payload acquisition, provenance, or checksum failure |
 | `30` | Install, upgrade, uninstall, or filesystem failure |
 | `40` | Verification, host-readiness, or captured bootstrap failure |
-| `50` | Loaded files require ZBrush to restart before retrying |
+| `50` | A candidate needs exact host verification, or loaded files require restart |
 
 ## Troubleshooting
 

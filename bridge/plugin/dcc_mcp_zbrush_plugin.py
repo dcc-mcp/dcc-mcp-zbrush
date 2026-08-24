@@ -32,6 +32,12 @@ def _autostart_enabled() -> bool:
 
 if __name__ == "__main__":
     try:
+        identity_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "dcc_mcp_zbrush_install_identity.json",
+        )
+        if os.path.isfile(identity_path):
+            os.environ["DCC_MCP_ZBRUSH_INSTALL_IDENTITY"] = identity_path
         import dcc_mcp_zbrush
 
         if not dcc_mcp_zbrush.install_menu():

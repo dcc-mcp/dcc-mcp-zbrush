@@ -85,7 +85,10 @@ dcc-mcp-zbrush install --version <version> --dcc-path "<ZBrush path>" --python p
 The fixed release payload is SHA-256 verified before caching. Sidecar mode
 installs a dedicated module and appends a bounded managed block to the shared
 `Python/init.py`; it never overwrites that file. Receipt-backed uninstall and
-rollback restore the previous state.
+rollback restore the previous state. Applying an install or upgrade stages a
+candidate and returns exit `50`; the candidate is committed only after the
+exact ZBrush process, start identity, endpoint, version, and loaded module
+origins pass `verify`.
 
 See the [canonical lifecycle SOP](docs/install.md) ([raw URL](https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md)).
 
@@ -182,7 +185,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 
 - ZBrush **2026.1+**
 - Python **3.10+** on the sidecar host (ZBrush itself ships 3.11)
-- `dcc-mcp-core >= 0.19.45`
+- `dcc-mcp-core >= 0.20.14`
 
 ## Environment variables
 

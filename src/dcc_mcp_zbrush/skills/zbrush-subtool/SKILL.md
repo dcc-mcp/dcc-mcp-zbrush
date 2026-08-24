@@ -7,7 +7,7 @@ description: >-
   copy, subdivide, polish, inflate, or bake normal/displacement maps. Not for
   mesh export or arbitrary Python — use zbrush-interchange or zbrush-scripting.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.19.45+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.20.14+"
 allowed-tools: Bash Read
 metadata:
   dcc-mcp:

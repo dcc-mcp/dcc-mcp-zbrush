@@ -6,7 +6,7 @@ description: >-
   rotation showcases. Not for clicking or inspecting ZBrush UI controls — use
   the shared ui-control skill for that.
 license: MIT
-compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.19.45+"
+compatibility: "dcc-mcp-zbrush 0.2+, ZBrush 2026.1+, dcc-mcp-core 0.20.14+"
 allowed-tools: Bash Read Write
 metadata:
   dcc-mcp:

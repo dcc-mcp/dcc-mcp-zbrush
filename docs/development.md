@@ -51,6 +51,7 @@ Or start manually from ZBrush Python console:
 
 ```python
 import dcc_mcp_zbrush
+
 dcc_mcp_zbrush.start_server(mode="embedded")
 ```
 
