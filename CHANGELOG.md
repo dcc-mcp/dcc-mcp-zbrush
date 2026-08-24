@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.25](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.24...v0.2.25) (2026-08-24)
+
+
+### Features
+
+* add safe ZBrush install lifecycle ([#69](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/69)) ([9abae73](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/9abae73ed7dc8806beadb356612cd716cda6ef45))
+
 ## [0.2.24](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.23...v0.2.24) (2026-07-30)
 
 
