@@ -998,6 +998,101 @@ def test_upgrade_rejects_unowned_link_inside_managed_tree(tmp_path: Path) -> Non
     assert (destination / "owned.py").read_bytes() == b"prior"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="native Windows junction contract")
+def test_native_windows_junction_is_rejected_without_traversal_or_recovery_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stat
+
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    outside = tmp_path / "operator-data"
+    outside.mkdir()
+    secret = outside / "secret.bin"
+    secret.write_bytes(b"operator bytes must remain untouched")
+    asset_dir = tmp_path / "ZStartup"
+    package = asset_dir / "dcc_mcp_zbrush"
+    asset_dir.mkdir()
+    completed = subprocess.run(
+        [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "mklink", "/J", str(package), str(outside)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip(f"native junction creation is unavailable: {completed.stderr.strip()}")
+
+    metadata = os.lstat(package)
+    assert metadata.st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT
+    assert Path(os.path.realpath(package)) == Path(os.path.realpath(outside))
+    monkeypatch.delattr(Path, "is_junction", raising=False)
+    hashed: list[Path] = []
+    copied: list[Path] = []
+    original_sha256_file = lifecycle._sha256_file
+    original_copyfile = lifecycle.shutil.copyfile
+
+    def track_hash(path: Path) -> str:
+        hashed.append(Path(path))
+        return original_sha256_file(path)
+
+    def track_copy(
+        source: str | os.PathLike[str], destination: str | os.PathLike[str], *args: object, **kwargs: object
+    ):
+        source_path = Path(source)
+        if source_path.is_relative_to(outside):
+            copied.append(source_path)
+        return original_copyfile(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle, "_sha256_file", track_hash)
+    monkeypatch.setattr(lifecycle.shutil, "copyfile", track_copy)
+
+    with pytest.raises(lifecycle.LifecycleFailure, match="reparse point"):
+        lifecycle._manifest(asset_dir)
+    with pytest.raises(lifecycle.LifecycleFailure, match="reparse point"):
+        lifecycle._capture_transaction(
+            asset_dir,
+            "junction-test",
+            asset_dir / ".dcc-mcp" / "backups" / "new",
+        )
+
+    recovery_parent = asset_dir / ".dcc-mcp" / "transactions"
+    recovery_parent.mkdir(parents=True, exist_ok=True)
+    recovery_root = recovery_parent / "junction-recovery"
+    completed = subprocess.run(
+        [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "mklink", "/J", str(recovery_root), str(outside)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip(f"native recovery junction creation is unavailable: {completed.stderr.strip()}")
+    empty: list[dict[str, object]] = []
+    with pytest.raises(lifecycle.LifecycleFailure, match="linked path|reparse point"):
+        lifecycle._validate_transaction_recovery(
+            asset_dir,
+            {
+                "recovery_root": recovery_root.relative_to(asset_dir).as_posix(),
+                "snapshots": empty,
+                "snapshots_sha256": lifecycle._typed_manifest_sha256(empty),
+                "recovery_manifest": empty,
+                "recovery_manifest_sha256": lifecycle._typed_manifest_sha256(empty),
+            },
+        )
+
+    assert hashed == []
+    assert copied == []
+    assert secret.read_bytes() == b"operator bytes must remain untouched"
+    assert os.lstat(package).st_reparse_tag == metadata.st_reparse_tag
+    assert Path(os.path.realpath(package)) == Path(os.path.realpath(outside))
+    assert not (asset_dir / ".dcc-mcp" / "transactions" / "junction-test").exists()
+
+    lifecycle._remove_path(recovery_root)
+    lifecycle._remove_path(package)
+    assert not os.path.lexists(package)
+    assert outside.is_dir()
+    assert secret.read_bytes() == b"operator bytes must remain untouched"
+
+
 def test_public_embedded_upgrade_rejects_unowned_paths_before_transaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

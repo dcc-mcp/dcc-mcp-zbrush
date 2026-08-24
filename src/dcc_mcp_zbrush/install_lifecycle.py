@@ -885,12 +885,33 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     _atomic_write(path, (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
+def _is_windows_reparse_point(path: Path) -> bool:
+    """Detect reparse points without requiring Python 3.12's Path.is_junction()."""
+
+    if os.name != "nt":
+        return False
+    try:
+        metadata = os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _is_windows_reparse_directory(path: Path) -> bool:
+    if not _is_windows_reparse_point(path):
+        return False
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+
+
 def _remove_path(path: Path) -> None:
-    is_junction = getattr(path, "is_junction", lambda: False)
-    if is_junction():
-        os.rmdir(path)
-    elif path.is_symlink() or path.is_file():
+    if path.is_symlink() or (path.exists() and not _is_windows_reparse_directory(path) and path.is_file()):
         path.unlink(missing_ok=True)
+    elif _is_windows_reparse_directory(path):
+        os.rmdir(path)
     elif path.is_dir():
         shutil.rmtree(path)
 
@@ -903,7 +924,7 @@ def _prune_empty_managed_parents(asset_dir: Path) -> None:
         Path(".dcc-mcp/receipts"),
     ):
         path = asset_dir / relative
-        if path.is_dir() and not any(path.iterdir()):
+        if path.is_dir() and not path.is_symlink() and not _is_windows_reparse_point(path) and not any(path.iterdir()):
             path.rmdir()
 
 
@@ -998,6 +1019,8 @@ def _validate_snapshot_record(asset_dir: Path, recovery_root: Path, snapshot: An
     backup = _receipt_relative(asset_dir, snapshot.get("backup"), "transaction backup")
     if not backup.is_relative_to(recovery_root):
         raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery backup escapes managed storage")
+    if _is_windows_reparse_point(backup):
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery backup is a Windows reparse point")
     if kind == "file":
         size = snapshot.get("size")
         digest = snapshot.get("sha256")
@@ -1029,7 +1052,7 @@ def _validate_snapshot_record(asset_dir: Path, recovery_root: Path, snapshot: An
 
 def _validate_transaction_recovery(asset_dir: Path, transaction: Mapping[str, Any]) -> Path:
     recovery_root = _receipt_relative(asset_dir, transaction.get("recovery_root"), "transaction recovery root")
-    if not recovery_root.is_dir() or recovery_root.is_symlink():
+    if not recovery_root.is_dir() or recovery_root.is_symlink() or _is_windows_reparse_point(recovery_root):
         raise LifecycleFailure(EXIT_INSTALL, "rollback", "Transaction recovery storage is missing")
     snapshots = transaction.get("snapshots")
     snapshot_digest = transaction.get("snapshots_sha256")
@@ -1067,9 +1090,8 @@ def _capture_transaction(
         for index, relative_text in enumerate(sorted(target_texts)):
             relative = Path(PurePosixPath(relative_text))
             path = asset_dir / relative
-            is_junction = getattr(path, "is_junction", lambda: False)
             snapshot: dict[str, Any] = {"path": relative.as_posix()}
-            if path.is_symlink() or is_junction():
+            if path.is_symlink():
                 snapshot.update(
                     {
                         "kind": "link",
@@ -1077,6 +1099,12 @@ def _capture_transaction(
                         "target_is_directory": path.is_dir(),
                         "mode": _path_mode(path),
                     }
+                )
+            elif _is_windows_reparse_point(path):
+                raise LifecycleFailure(
+                    EXIT_PREFLIGHT,
+                    "ownership",
+                    f"Refusing Windows reparse point in transaction target: {relative.as_posix()}",
                 )
             elif path.is_file():
                 backup = recovery_root / f"{index}.file"
@@ -1163,13 +1191,19 @@ def _restore_transaction(asset_dir: Path, transaction: Mapping[str, Any]) -> Non
             if (
                 not destination.is_file()
                 or destination.is_symlink()
+                or _is_windows_reparse_point(destination)
                 or destination.stat().st_size != snapshot["size"]
                 or _sha256_file(destination) != snapshot["sha256"]
                 or _path_mode(destination) != snapshot["mode"]
             ):
                 raise LifecycleFailure(EXIT_INSTALL, "rollback", "Restored recovery file drifted")
         elif kind == "directory":
-            if not destination.is_dir() or destination.is_symlink() or _path_mode(destination) != snapshot["mode"]:
+            if (
+                not destination.is_dir()
+                or destination.is_symlink()
+                or _is_windows_reparse_point(destination)
+                or _path_mode(destination) != snapshot["mode"]
+            ):
                 raise LifecycleFailure(EXIT_INSTALL, "rollback", "Restored recovery directory drifted")
             _validate_recovery_manifest(destination, snapshot["manifest"])
         elif (
@@ -1216,8 +1250,7 @@ def _receipt_relative(asset_dir: Path, value: Any, label: str) -> Path:
         raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", f"Receipt contains an unsafe {label}")
     relative = PurePosixPath(value)
     raw_destination = asset_dir.joinpath(*relative.parts)
-    is_junction = getattr(raw_destination, "is_junction", lambda: False)
-    if raw_destination.is_symlink() or is_junction():
+    if raw_destination.is_symlink() or _is_windows_reparse_point(raw_destination):
         raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", f"Receipt {label} points to a linked path")
     destination = raw_destination.resolve()
     if not destination.is_relative_to(asset_dir.resolve()):
@@ -1546,8 +1579,7 @@ def _lock_preflight(asset_dir: Path, request: LifecycleRequest) -> None:
 
 
 def _backup_file(path: Path, asset_dir: Path, backup_root: Path, relative: Path) -> dict[str, Any]:
-    is_junction = getattr(path, "is_junction", lambda: False)
-    if path.is_symlink() or is_junction():
+    if path.is_symlink() or _is_windows_reparse_point(path):
         raise LifecycleFailure(EXIT_PREFLIGHT, "preflight", f"Refusing linked managed path: {relative.as_posix()}")
     record: dict[str, Any] = {"path": relative.as_posix(), "existed": path.is_file()}
     if path.is_file():
@@ -1585,7 +1617,9 @@ def _manifest(root: Path) -> list[dict[str, Any]]:
     """Describe the exact owned file/directory/link closure without following links."""
 
     entries: list[dict[str, Any]] = []
-    if not root.is_dir() or root.is_symlink():
+    if root.is_symlink() or _is_windows_reparse_point(root):
+        raise LifecycleFailure(EXIT_PREFLIGHT, "ownership", "Managed tree root cannot be a reparse point")
+    if not root.is_dir():
         return entries
     for current, directory_names, file_names in os.walk(root, topdown=True, followlinks=False):
         current_path = Path(current)
@@ -1596,6 +1630,12 @@ def _manifest(root: Path) -> list[dict[str, Any]]:
             if path.is_symlink():
                 target = _safe_link_target(root, path, os.readlink(path))
                 entries.append({"kind": "link", "path": relative, "target": target, "target_is_directory": True})
+            elif _is_windows_reparse_point(path):
+                raise LifecycleFailure(
+                    EXIT_PREFLIGHT,
+                    "ownership",
+                    f"Refusing Windows reparse point in managed tree: {relative}",
+                )
             else:
                 entries.append({"kind": "directory", "path": relative})
                 traversed.append(name)
@@ -1606,6 +1646,12 @@ def _manifest(root: Path) -> list[dict[str, Any]]:
             if path.is_symlink():
                 target = _safe_link_target(root, path, os.readlink(path))
                 entries.append({"kind": "link", "path": relative, "target": target, "target_is_directory": False})
+            elif _is_windows_reparse_point(path):
+                raise LifecycleFailure(
+                    EXIT_PREFLIGHT,
+                    "ownership",
+                    f"Refusing Windows reparse point in managed tree: {relative}",
+                )
             elif path.is_file():
                 entries.append(
                     {
@@ -1641,7 +1687,9 @@ def _validate_manifest(root: Path, manifest: Any, *, verify_bytes: bool = True) 
                 raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", "Managed tree manifest omits a parent directory")
         kind = entry["kind"]
         if kind == "directory":
-            if verify_bytes and (destination.is_symlink() or not destination.is_dir()):
+            if verify_bytes and (
+                destination.is_symlink() or _is_windows_reparse_point(destination) or not destination.is_dir()
+            ):
                 raise LifecycleFailure(EXIT_PREFLIGHT, "integrity", f"Managed directory drifted: {relative_text}")
             directories.add(relative_text)
         elif kind == "file":
@@ -1649,7 +1697,9 @@ def _validate_manifest(root: Path, manifest: Any, *, verify_bytes: bool = True) 
             size = entry.get("size")
             if not re.fullmatch(r"[0-9a-f]{64}", digest) or not isinstance(size, int) or size < 0:
                 raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", "Managed file ownership metadata is invalid")
-            if verify_bytes and (destination.is_symlink() or not destination.is_file()):
+            if verify_bytes and (
+                destination.is_symlink() or _is_windows_reparse_point(destination) or not destination.is_file()
+            ):
                 raise LifecycleFailure(EXIT_PREFLIGHT, "integrity", f"Managed file drifted: {relative_text}")
             if verify_bytes and (destination.stat().st_size != size or _sha256_file(destination) != digest):
                 raise LifecycleFailure(EXIT_PREFLIGHT, "integrity", f"Managed file bytes drifted: {relative_text}")
@@ -1694,7 +1744,7 @@ def _install_managed_tree(
     previous_manifest: Optional[list[dict[str, Any]]],
 ) -> tuple[list[dict[str, Any]], bool]:
     root_existed = destination.is_dir()
-    if destination.is_symlink() or getattr(destination, "is_junction", lambda: False)():
+    if destination.is_symlink() or _is_windows_reparse_point(destination):
         raise LifecycleFailure(EXIT_PREFLIGHT, "ownership", "Managed package root cannot be a link")
     if root_existed and previous_manifest is None and any(destination.iterdir()):
         raise LifecycleFailure(EXIT_PREFLIGHT, "partial_install", "Embedded package root exists without ownership")
