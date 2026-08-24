@@ -16,6 +16,7 @@ import os
 import plistlib
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -906,6 +907,148 @@ def _prune_empty_managed_parents(asset_dir: Path) -> None:
             path.rmdir()
 
 
+def _path_mode(path: Path) -> int:
+    return stat.S_IMODE(os.lstat(path).st_mode)
+
+
+def _typed_manifest_sha256(manifest: Any) -> str:
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return _sha256_bytes(encoded)
+
+
+def _recovery_manifest(root: Path) -> list[dict[str, Any]]:
+    """Describe recovery bytes, links, directories, and POSIX modes exactly."""
+
+    manifest = _manifest(root)
+    return [
+        {
+            **entry,
+            "mode": _path_mode(root.joinpath(*PurePosixPath(str(entry["path"])).parts)),
+        }
+        for entry in manifest
+    ]
+
+
+def _validate_recovery_manifest(root: Path, manifest: Any) -> None:
+    if not isinstance(manifest, list):
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery manifest is not a typed array")
+    projected: list[dict[str, Any]] = []
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery manifest entry is malformed")
+        kind = entry.get("kind")
+        required = {
+            "directory": {"kind", "path", "mode"},
+            "file": {"kind", "path", "sha256", "size", "mode"},
+            "link": {"kind", "path", "target", "target_is_directory", "mode"},
+        }.get(str(kind))
+        mode = entry.get("mode")
+        if required is None or set(entry) != required:
+            raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery manifest entry is malformed")
+        if isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o7777:
+            raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery manifest mode is invalid")
+        projected.append({key: value for key, value in entry.items() if key != "mode"})
+    try:
+        _validate_manifest(root, projected)
+        actual = _recovery_manifest(root)
+    except (OSError, LifecycleFailure) as exc:
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery manifest validation failed") from exc
+    if actual != manifest:
+        raise LifecycleFailure(
+            EXIT_INSTALL,
+            "rollback",
+            "Recovery contains missing, changed, or unexpected entries or modes",
+        )
+
+
+def _validate_snapshot_record(asset_dir: Path, recovery_root: Path, snapshot: Any) -> None:
+    if not isinstance(snapshot, dict):
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery snapshot is malformed")
+    kind = snapshot.get("kind")
+    required = {
+        "missing": {"path", "kind"},
+        "file": {"path", "kind", "backup", "sha256", "size", "mode"},
+        "directory": {
+            "path",
+            "kind",
+            "backup",
+            "manifest",
+            "manifest_sha256",
+            "mode",
+        },
+        "link": {"path", "kind", "target", "target_is_directory", "mode"},
+    }.get(str(kind))
+    if required is None or set(snapshot) != required:
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery snapshot is malformed")
+    if kind == "missing":
+        return
+    mode = snapshot.get("mode")
+    if isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o7777:
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery snapshot mode is invalid")
+    if kind == "link":
+        target = snapshot.get("target")
+        if (
+            not isinstance(target, str)
+            or not target
+            or len(target) > 32768
+            or not isinstance(snapshot.get("target_is_directory"), bool)
+        ):
+            raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery link metadata is invalid")
+        return
+    backup = _receipt_relative(asset_dir, snapshot.get("backup"), "transaction backup")
+    if not backup.is_relative_to(recovery_root):
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery backup escapes managed storage")
+    if kind == "file":
+        size = snapshot.get("size")
+        digest = snapshot.get("sha256")
+        if (
+            not backup.is_file()
+            or backup.is_symlink()
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 0
+            or not re.fullmatch(r"[0-9a-f]{64}", str(digest or ""))
+            or backup.stat().st_size != size
+            or _sha256_file(backup) != digest
+            or _path_mode(backup) != mode
+        ):
+            raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery file bytes or mode drifted")
+        return
+    manifest = snapshot.get("manifest")
+    digest = snapshot.get("manifest_sha256")
+    if (
+        not backup.is_dir()
+        or backup.is_symlink()
+        or not re.fullmatch(r"[0-9a-f]{64}", str(digest or ""))
+        or _typed_manifest_sha256(manifest) != digest
+        or _path_mode(backup) != mode
+    ):
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Recovery directory metadata drifted")
+    _validate_recovery_manifest(backup, manifest)
+
+
+def _validate_transaction_recovery(asset_dir: Path, transaction: Mapping[str, Any]) -> Path:
+    recovery_root = _receipt_relative(asset_dir, transaction.get("recovery_root"), "transaction recovery root")
+    if not recovery_root.is_dir() or recovery_root.is_symlink():
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Transaction recovery storage is missing")
+    snapshots = transaction.get("snapshots")
+    snapshot_digest = transaction.get("snapshots_sha256")
+    recovery_manifest = transaction.get("recovery_manifest")
+    recovery_digest = transaction.get("recovery_manifest_sha256")
+    if (
+        not isinstance(snapshots, list)
+        or not re.fullmatch(r"[0-9a-f]{64}", str(snapshot_digest or ""))
+        or _typed_manifest_sha256(snapshots) != snapshot_digest
+        or not re.fullmatch(r"[0-9a-f]{64}", str(recovery_digest or ""))
+        or _typed_manifest_sha256(recovery_manifest) != recovery_digest
+    ):
+        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Transaction recovery digest is invalid")
+    _validate_recovery_manifest(recovery_root, recovery_manifest)
+    for snapshot in snapshots:
+        _validate_snapshot_record(asset_dir, recovery_root, snapshot)
+    return recovery_root
+
+
 def _capture_transaction(
     asset_dir: Path,
     transaction_id: str,
@@ -918,47 +1061,75 @@ def _capture_transaction(
     recovery_root = asset_dir / ".dcc-mcp" / "transactions" / transaction_id
     recovery_root.mkdir(parents=True, exist_ok=False)
     snapshots: list[dict[str, Any]] = []
-    target_texts = set(TRANSACTION_TARGETS)
-    target_texts.update(path.as_posix() for path in extra_targets)
-    for index, relative_text in enumerate(sorted(target_texts)):
-        relative = Path(PurePosixPath(relative_text))
-        path = asset_dir / relative
-        is_junction = getattr(path, "is_junction", lambda: False)
-        snapshot: dict[str, Any] = {"path": relative.as_posix()}
-        if path.is_symlink() or is_junction():
-            snapshot.update(
-                {
-                    "kind": "link",
-                    "target": os.readlink(path),
-                    "target_is_directory": path.is_dir(),
-                }
-            )
-        elif path.is_file():
-            backup = recovery_root / f"{index}.file"
-            _atomic_write(backup, path.read_bytes())
-            snapshot.update({"kind": "file", "backup": backup.relative_to(asset_dir).as_posix()})
-        elif path.is_dir():
-            backup = recovery_root / f"{index}.tree"
-            shutil.copytree(path, backup, symlinks=True)
-            snapshot.update({"kind": "directory", "backup": backup.relative_to(asset_dir).as_posix()})
-        else:
-            snapshot["kind"] = "missing"
-        snapshots.append(snapshot)
-    return {
-        "id": transaction_id,
-        "operation": operation,
-        "recovery_root": recovery_root.relative_to(asset_dir).as_posix(),
-        "new_backup_root": backup_root.relative_to(asset_dir).as_posix(),
-        "extra_targets": sorted(path.as_posix() for path in extra_targets),
-        "remove_new_backup_on_restore": remove_new_backup_on_restore,
-        "snapshots": snapshots,
-    }
+    try:
+        target_texts = set(TRANSACTION_TARGETS)
+        target_texts.update(path.as_posix() for path in extra_targets)
+        for index, relative_text in enumerate(sorted(target_texts)):
+            relative = Path(PurePosixPath(relative_text))
+            path = asset_dir / relative
+            is_junction = getattr(path, "is_junction", lambda: False)
+            snapshot: dict[str, Any] = {"path": relative.as_posix()}
+            if path.is_symlink() or is_junction():
+                snapshot.update(
+                    {
+                        "kind": "link",
+                        "target": os.readlink(path),
+                        "target_is_directory": path.is_dir(),
+                        "mode": _path_mode(path),
+                    }
+                )
+            elif path.is_file():
+                backup = recovery_root / f"{index}.file"
+                mode = _path_mode(path)
+                _atomic_write(backup, path.read_bytes())
+                backup.chmod(mode)
+                snapshot.update(
+                    {
+                        "kind": "file",
+                        "backup": backup.relative_to(asset_dir).as_posix(),
+                        "sha256": _sha256_file(backup),
+                        "size": backup.stat().st_size,
+                        "mode": mode,
+                    }
+                )
+            elif path.is_dir():
+                backup = recovery_root / f"{index}.tree"
+                shutil.copytree(path, backup, symlinks=True)
+                manifest = _recovery_manifest(backup)
+                snapshot.update(
+                    {
+                        "kind": "directory",
+                        "backup": backup.relative_to(asset_dir).as_posix(),
+                        "manifest": manifest,
+                        "manifest_sha256": _typed_manifest_sha256(manifest),
+                        "mode": _path_mode(path),
+                    }
+                )
+            else:
+                snapshot["kind"] = "missing"
+            snapshots.append(snapshot)
+        recovery_manifest = _recovery_manifest(recovery_root)
+        transaction = {
+            "id": transaction_id,
+            "operation": operation,
+            "recovery_root": recovery_root.relative_to(asset_dir).as_posix(),
+            "new_backup_root": backup_root.relative_to(asset_dir).as_posix(),
+            "extra_targets": sorted(path.as_posix() for path in extra_targets),
+            "remove_new_backup_on_restore": remove_new_backup_on_restore,
+            "snapshots": snapshots,
+            "snapshots_sha256": _typed_manifest_sha256(snapshots),
+            "recovery_manifest": recovery_manifest,
+            "recovery_manifest_sha256": _typed_manifest_sha256(recovery_manifest),
+        }
+        _validate_transaction_recovery(asset_dir, transaction)
+        return transaction
+    except BaseException:
+        _remove_path(recovery_root)
+        raise
 
 
 def _restore_transaction(asset_dir: Path, transaction: Mapping[str, Any]) -> None:
-    recovery_root = asset_dir / str(transaction["recovery_root"])
-    if not recovery_root.is_dir():
-        raise LifecycleFailure(EXIT_INSTALL, "rollback", "Transaction recovery storage is missing")
+    recovery_root = _validate_transaction_recovery(asset_dir, transaction)
     snapshots = sorted(
         transaction["snapshots"],
         key=lambda item: str(item.get("path")) == RECEIPT_RELATIVE.as_posix(),
@@ -970,6 +1141,7 @@ def _restore_transaction(asset_dir: Path, transaction: Mapping[str, Any]) -> Non
         if kind == "file":
             backup = asset_dir / str(snapshot["backup"])
             _atomic_write(destination, backup.read_bytes())
+            destination.chmod(int(snapshot["mode"]))
         elif kind == "directory":
             backup = asset_dir / str(snapshot["backup"])
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -981,6 +1153,31 @@ def _restore_transaction(asset_dir: Path, transaction: Mapping[str, Any]) -> Non
                 destination,
                 target_is_directory=bool(snapshot.get("target_is_directory")),
             )
+    for snapshot in snapshots:
+        destination = asset_dir / str(snapshot["path"])
+        kind = snapshot["kind"]
+        if kind == "missing":
+            if destination.exists() or destination.is_symlink():
+                raise LifecycleFailure(EXIT_INSTALL, "rollback", "Missing recovery target was recreated")
+        elif kind == "file":
+            if (
+                not destination.is_file()
+                or destination.is_symlink()
+                or destination.stat().st_size != snapshot["size"]
+                or _sha256_file(destination) != snapshot["sha256"]
+                or _path_mode(destination) != snapshot["mode"]
+            ):
+                raise LifecycleFailure(EXIT_INSTALL, "rollback", "Restored recovery file drifted")
+        elif kind == "directory":
+            if not destination.is_dir() or destination.is_symlink() or _path_mode(destination) != snapshot["mode"]:
+                raise LifecycleFailure(EXIT_INSTALL, "rollback", "Restored recovery directory drifted")
+            _validate_recovery_manifest(destination, snapshot["manifest"])
+        elif (
+            not destination.is_symlink()
+            or os.readlink(destination) != snapshot["target"]
+            or _path_mode(destination) != snapshot["mode"]
+        ):
+            raise LifecycleFailure(EXIT_INSTALL, "rollback", "Restored recovery link drifted")
     if transaction.get("remove_new_backup_on_restore", True):
         _remove_path(asset_dir / str(transaction["new_backup_root"]))
     _remove_path(recovery_root)
@@ -1186,9 +1383,12 @@ def _validate_receipt(asset_dir: Path, data: Any) -> dict[str, Any]:
                     or not isinstance(snapshot.get("target_is_directory"), bool)
                 ):
                     raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", "Transaction link snapshot is invalid")
+        if seen_snapshot_paths != allowed_snapshot_paths:
+            raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", "Receipt transaction omits an owned recovery target")
         new_backup_root = _receipt_relative(asset_dir, transaction.get("new_backup_root"), "new backup root")
         if not new_backup_root.is_relative_to(expected_backup_parent):
             raise LifecycleFailure(EXIT_PREFLIGHT, "receipt", "Transaction backup root escapes managed backups")
+        _validate_transaction_recovery(asset_dir, transaction)
     return data
 
 
@@ -1476,6 +1676,18 @@ def _remove_owned_entries(root: Path, manifest: list[dict[str, Any]], *, keep: s
             path.rmdir()
 
 
+def _reject_unowned_managed_entries(destination: Path, previous_manifest: list[dict[str, Any]]) -> None:
+    _validate_manifest(destination, previous_manifest)
+    previous_paths = {str(entry["path"]) for entry in previous_manifest}
+    unexpected = [str(entry["path"]) for entry in _manifest(destination) if str(entry["path"]) not in previous_paths]
+    if unexpected:
+        raise LifecycleFailure(
+            EXIT_PREFLIGHT,
+            "ownership",
+            f"Refusing unowned path in managed package root: {unexpected[0]}",
+        )
+
+
 def _install_managed_tree(
     source: Path,
     destination: Path,
@@ -1487,7 +1699,7 @@ def _install_managed_tree(
     if root_existed and previous_manifest is None and any(destination.iterdir()):
         raise LifecycleFailure(EXIT_PREFLIGHT, "partial_install", "Embedded package root exists without ownership")
     if previous_manifest is not None:
-        _validate_manifest(destination, previous_manifest)
+        _reject_unowned_managed_entries(destination, previous_manifest)
     candidate = _manifest(source)
     candidate_kinds = {str(entry["path"]): str(entry["kind"]) for entry in candidate}
     if previous_manifest is not None:
@@ -1598,6 +1810,13 @@ def _install(
             detected=detected,
             next_steps=next_steps,
         )
+    if existing and request.mode == "embedded":
+        prior_trees = existing.get("managed_trees", [])
+        prior_tree = prior_trees[0] if len(prior_trees) == 1 else None
+        previous_manifest = prior_tree.get("installed_manifest") if isinstance(prior_tree, dict) else None
+        if not isinstance(previous_manifest, list):
+            raise LifecycleFailure(EXIT_PREFLIGHT, "ownership", "Embedded upgrade ownership is missing")
+        _reject_unowned_managed_entries(asset_dir / "dcc_mcp_zbrush", previous_manifest)
     _lock_preflight(asset_dir, request)
     archive_path: Path
     digest: str

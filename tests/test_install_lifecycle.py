@@ -850,6 +850,198 @@ def test_upgrade_readiness_failure_restores_exact_committed_version(
     assert not (request.asset_dir / ".dcc-mcp" / "transactions").exists()
 
 
+def test_tampered_transaction_recovery_is_rejected_before_destructive_restore(tmp_path: Path) -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    asset_dir = tmp_path / "ZStartup"
+    target = asset_dir / lifecycle.SIDECAR_RELATIVE
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"prior managed bytes")
+    transaction = lifecycle._capture_transaction(
+        asset_dir,
+        "tamper-test",
+        asset_dir / ".dcc-mcp" / "backups" / "new",
+    )
+    snapshot = next(item for item in transaction["snapshots"] if item["path"] == lifecycle.SIDECAR_RELATIVE.as_posix())
+    backup = asset_dir / snapshot["backup"]
+    target.write_bytes(b"candidate must survive failed recovery validation")
+    backup.write_bytes(b"tampered recovery")
+
+    with pytest.raises(lifecycle.LifecycleFailure, match="Recovery"):
+        lifecycle._restore_transaction(asset_dir, transaction)
+
+    assert target.read_bytes() == b"candidate must survive failed recovery validation"
+    assert (asset_dir / transaction["recovery_root"]).is_dir()
+
+
+def test_partial_transaction_restore_retains_complete_validated_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    asset_dir = tmp_path / "ZStartup"
+    first = asset_dir / lifecycle.IDENTITY_RELATIVE
+    second = asset_dir / lifecycle.SIDECAR_RELATIVE
+    first.parent.mkdir(parents=True)
+    first.write_bytes(b"prior identity")
+    second.write_bytes(b"prior bridge")
+    transaction = lifecycle._capture_transaction(
+        asset_dir,
+        "partial-test",
+        asset_dir / ".dcc-mcp" / "backups" / "new",
+    )
+    first.write_bytes(b"candidate identity")
+    second.write_bytes(b"candidate bridge")
+    original_atomic_write = lifecycle._atomic_write
+    restored = 0
+
+    def fail_second_restore(path: Path, data: bytes) -> None:
+        nonlocal restored
+        if path in {first, second}:
+            restored += 1
+            if restored == 2:
+                raise PermissionError("injected partial restore")
+        original_atomic_write(path, data)
+
+    monkeypatch.setattr(lifecycle, "_atomic_write", fail_second_restore)
+
+    with pytest.raises(PermissionError, match="partial restore"):
+        lifecycle._restore_transaction(asset_dir, transaction)
+
+    recovery_root = asset_dir / transaction["recovery_root"]
+    assert recovery_root.is_dir()
+    lifecycle._validate_transaction_recovery(asset_dir, transaction)
+    restored_values = [path.read_bytes() if path.is_file() else None for path in (first, second)]
+    assert sum(value in {b"prior identity", b"prior bridge"} for value in restored_values) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode and relative-link recovery contract")
+def test_transaction_recovery_restores_directory_file_link_and_posix_modes(tmp_path: Path) -> None:
+    import stat
+
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    asset_dir = tmp_path / "ZStartup"
+    package = asset_dir / "dcc_mcp_zbrush"
+    nested = package / "nested"
+    nested.mkdir(parents=True)
+    module = nested / "module.py"
+    module.write_bytes(b"prior module")
+    alias = package / "alias.py"
+    os.symlink("nested/module.py", alias)
+    package.chmod(0o711)
+    nested.chmod(0o750)
+    module.chmod(0o640)
+    transaction = lifecycle._capture_transaction(
+        asset_dir,
+        "mode-test",
+        asset_dir / ".dcc-mcp" / "backups" / "new",
+    )
+    package_snapshot = next(item for item in transaction["snapshots"] if item["path"] == "dcc_mcp_zbrush")
+    link_entry = next(item for item in package_snapshot["manifest"] if item["path"] == "alias.py")
+    assert link_entry["kind"] == "link"
+    assert link_entry["target"] == "nested/module.py"
+    assert isinstance(link_entry["mode"], int)
+    lifecycle._remove_path(package)
+    package.mkdir()
+    (package / "candidate.py").write_bytes(b"candidate")
+
+    lifecycle._restore_transaction(asset_dir, transaction)
+
+    assert stat.S_IMODE(package.stat().st_mode) == 0o711
+    assert stat.S_IMODE(nested.stat().st_mode) == 0o750
+    assert stat.S_IMODE(module.stat().st_mode) == 0o640
+    assert alias.is_symlink() and os.readlink(alias) == "nested/module.py"
+
+
+def test_upgrade_rejects_unowned_empty_directory_inside_managed_tree(tmp_path: Path) -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    source = tmp_path / "candidate"
+    destination = tmp_path / "installed"
+    source.mkdir()
+    destination.mkdir()
+    (source / "owned.py").write_bytes(b"next")
+    (destination / "owned.py").write_bytes(b"prior")
+    previous = lifecycle._manifest(destination)
+    operator_directory = destination / "operator-empty"
+    operator_directory.mkdir()
+
+    with pytest.raises(lifecycle.LifecycleFailure, match="unowned path"):
+        lifecycle._install_managed_tree(source, destination, previous)
+
+    assert operator_directory.is_dir()
+    assert (destination / "owned.py").read_bytes() == b"prior"
+
+
+def test_upgrade_rejects_unowned_link_inside_managed_tree(tmp_path: Path) -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    source = tmp_path / "candidate"
+    destination = tmp_path / "installed"
+    source.mkdir()
+    destination.mkdir()
+    (source / "owned.py").write_bytes(b"next")
+    (destination / "owned.py").write_bytes(b"prior")
+    previous = lifecycle._manifest(destination)
+    operator_link = destination / "operator-link.py"
+    try:
+        os.symlink("owned.py", operator_link)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(lifecycle.LifecycleFailure, match="unowned path"):
+        lifecycle._install_managed_tree(source, destination, previous)
+
+    assert operator_link.is_symlink()
+    assert os.readlink(operator_link) == "owned.py"
+    assert (destination / "owned.py").read_bytes() == b"prior"
+
+
+def test_public_embedded_upgrade_rejects_unowned_paths_before_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dcc_mcp_core.install_lifecycle as core_lifecycle
+
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    request = replace(_request(tmp_path), mode="embedded")
+    first = tmp_path / "first-embedded.zip"
+    with zipfile.ZipFile(first, "w") as payload:
+        payload.writestr("embedded/dcc_mcp_zbrush/__init__.py", "PLUGIN = 'prior'\n")
+        payload.writestr("embedded/dcc_mcp_zbrush_plugin.py", "ENTRY = 'prior'\n")
+    first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
+    installed = lifecycle.run_lifecycle(request, plugin_archive=first, expected_sha256=first_digest)
+    assert installed["exit_code"] == 50
+    receipt_path = request.asset_dir / ".dcc-mcp" / "receipts" / "zbrush.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    readiness = _embedded_readiness(request, receipt)
+    monkeypatch.setattr(core_lifecycle, "wait_for_sidecar_ready", lambda **_kwargs: readiness)
+    monkeypatch.setattr(lifecycle, "_process_executable", lambda _pid: Path(request.dcc_path))
+    monkeypatch.setattr(lifecycle, "_process_start_identity", lambda _pid: "start-5252")
+    assert lifecycle.run_lifecycle(replace(request, operation="verify"))["exit_code"] == 0
+    package = request.asset_dir / "dcc_mcp_zbrush"
+    operator_directory = package / "operator-empty"
+    operator_directory.mkdir()
+    second = tmp_path / "second-embedded.zip"
+    with zipfile.ZipFile(second, "w") as payload:
+        payload.writestr("embedded/dcc_mcp_zbrush/__init__.py", "PLUGIN = 'next'\n")
+        payload.writestr("embedded/dcc_mcp_zbrush_plugin.py", "ENTRY = 'next'\n")
+    second_digest = hashlib.sha256(second.read_bytes()).hexdigest()
+
+    upgraded = lifecycle.run_lifecycle(
+        replace(request, operation="upgrade", version="0.2.25"),
+        plugin_archive=second,
+        expected_sha256=second_digest,
+    )
+
+    assert upgraded["exit_code"] == 10
+    assert upgraded["stage"] == "ownership"
+    assert operator_directory.is_dir()
+    assert (package / "__init__.py").read_text(encoding="utf-8") == "PLUGIN = 'prior'\n"
+    assert not (request.asset_dir / ".dcc-mcp" / "transactions").exists()
+
+
 def test_embedded_owned_manifest_preserves_unowned_operator_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
