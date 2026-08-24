@@ -53,7 +53,7 @@ Default minimal loads zbrush-scripting, zbrush-scene.
 |src/dcc_mcp_zbrush/server.py|ZBrushMcpServer composition root|
 |src/dcc_mcp_zbrush/_executor.py|In-process dispatcher for embedded VM|
 |src/dcc_mcp_zbrush/bridge.py|Sidecar socket bridge client|
-|bridge/plugin/mcp_socket_bridge.py|In-ZBrush main-thread TCP bridge installed as Python/init.py|
+|bridge/plugin/mcp_socket_bridge.py|In-ZBrush main-thread TCP bridge imported by a bounded managed init.py block|
 |bridge/plugin/dcc_mcp_zbrush/__init__.py|Auto-start embedded server|
 
 ## ZBrush Python VM constraints
@@ -68,4 +68,5 @@ Default minimal loads zbrush-scripting, zbrush-scene.
 ## External docs
 
 - ZBrush Python SDK: https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html
-- Upstream core llms.txt: https://github.com/loonghao/dcc-mcp-core/blob/main/llms.txt
+- Upstream core llms.txt: https://github.com/dcc-mcp/dcc-mcp-core/blob/main/llms.txt
+- Canonical install SOP: https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md

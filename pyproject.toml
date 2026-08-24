@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dcc-mcp-core>=0.19.45,<1.0.0",
+    "dcc-mcp-core>=0.20.14,<1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,12 +30,15 @@ dev = [
     "ruff>=0.8.0",
     "hatchling",
     "build>=1.0",
+    "twine>=5.0",
     "pyyaml>=6.0",
+    "jsonschema>=4.23",
 ]
 
 [project.urls]
 Homepage = "https://github.com/dcc-mcp/dcc-mcp-zbrush"
 Repository = "https://github.com/dcc-mcp/dcc-mcp-zbrush"
+Installation = "https://github.com/dcc-mcp/dcc-mcp-zbrush/blob/main/docs/install.md"
 
 [project.scripts]
 dcc-mcp-zbrush = "dcc_mcp_zbrush.cli:main"

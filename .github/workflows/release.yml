@@ -159,19 +159,25 @@ jobs:
       - name: Pack ZBrush plugin
         env:
           RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
-        run: python tools/pack_plugin.py --version "$RELEASE_VERSION" --output dist/plugin
+        run: |
+          python tools/pack_plugin.py --version "$RELEASE_VERSION" --output dist/plugin
+          sha256sum dist/plugin/*.zip > dist/plugin/SHA256SUMS
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v7
         with:
           name: zbrush-plugin
-          path: dist/plugin/*.zip
+          path: |
+            dist/plugin/*.zip
+            dist/plugin/SHA256SUMS
 
       - name: Upload plugin to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: dist/plugin/*.zip
+          files: |
+            dist/plugin/*.zip
+            dist/plugin/SHA256SUMS
 
   publish:
     name: Publish to PyPI

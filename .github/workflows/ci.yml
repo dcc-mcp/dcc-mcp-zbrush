@@ -100,14 +100,19 @@ jobs:
       - name: Pack ZBrush plugin
         run: python tools/pack_plugin.py --output dist/plugin
 
+      - name: Write plugin checksum
+        run: sha256sum dist/plugin/*.zip > dist/plugin/SHA256SUMS
+
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v7
         with:
           name: zbrush-plugin
-          path: dist/plugin/*.zip
+          path: |
+            dist/plugin/*.zip
+            dist/plugin/SHA256SUMS
 
   smoke-test:
-    name: Smoke Test (clean venv + bootstrap dry-run + docs drift)
+    name: Smoke Test (clean venv + lifecycle schema + docs drift)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -118,10 +123,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: pip install build wheel
+        run: pip install build wheel twine
 
-      - name: Build wheel from source
-        run: python -m build --wheel --outdir dist/
+      - name: Build wheel and sdist from source
+        run: python -m build --outdir dist/
+
+      - name: Check distribution metadata
+        run: python -m twine check dist/*
 
       - name: Install wheel into clean venv
         run: |
@@ -153,17 +161,33 @@ jobs:
           print(f'Plugin ZIP OK: {len(names)} entries')
           "
 
-      - name: Bootstrap dry-run — embedded mode
-        run: python tools/bootstrap_agent_install.py --mode embedded --dry-run
-
-      - name: Bootstrap dry-run — sidecar mode
-        run: python tools/bootstrap_agent_install.py --mode sidecar --mcp-target both --dry-run
-
       - name: Install test dependencies
-        run: pip install pytest pyyaml
+        run: /tmp/smoke-venv/bin/pip install pytest pyyaml jsonschema
 
       - name: Run smoke tests (unit + structure + docs drift)
-        run: pytest tests/test_smoke.py -v --tb=short
+        run: /tmp/smoke-venv/bin/python -m pytest tests/test_smoke.py -v --tb=short
+
+      - name: Validate canonical lifecycle schema without impersonating ZBrush
+        run: /tmp/smoke-venv/bin/python -m pytest tests/test_install_lifecycle.py::test_public_install_plan_matches_exact_core_2320_draft_schema -v --tb=short
+
+  lifecycle-smoke:
+    name: Lifecycle transactions (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install package and build plugin
+        run: |
+          python -m pip install -e ".[dev]"
+          python tools/pack_plugin.py --output dist/plugin
+
+      - name: Exercise bounded transaction, rollback, ownership, and schema regressions
+        run: python -m pytest tests/test_install_lifecycle.py -v --tb=short
 
   docs-drift:
     name: Docs Drift Check

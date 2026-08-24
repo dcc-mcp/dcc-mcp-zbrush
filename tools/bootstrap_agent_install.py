@@ -7,19 +7,19 @@ invocation — no path guessing, no directory spelunking.
 Usage::
 
     # Embedded mode (recommended) — MCP server runs inside ZBrush
-    python tools/bootstrap_agent_install.py --mode embedded
+    python tools/bootstrap_agent_install.py --mode embedded --version 0.2.24 --dcc-path <ZBrush>
 
     # Sidecar mode — MCP server runs outside ZBrush via socket bridge
-    python tools/bootstrap_agent_install.py --mode sidecar
+    python tools/bootstrap_agent_install.py --mode sidecar --version 0.2.24 --dcc-path <ZBrush>
 
     # Preview without making changes
-    python tools/bootstrap_agent_install.py --mode embedded --dry-run
+    python tools/bootstrap_agent_install.py --mode embedded --version 0.2.24 --dcc-path <ZBrush> --dry-run
 
     # Pin a specific release version
-    python tools/bootstrap_agent_install.py --mode embedded --version 0.2.7
+    python tools/bootstrap_agent_install.py --mode embedded --version 0.2.7 --dcc-path <ZBrush> --yes
 
     # Target both Cursor and Claude Desktop config
-    python tools/bootstrap_agent_install.py --mode embedded --mcp-target both
+    python tools/bootstrap_agent_install.py --mode embedded --version 0.2.24 --dcc-path <ZBrush> --mcp-target both --yes
 
 Steps (each skippable via --skip-*)::
 
@@ -185,20 +185,6 @@ def _parse_version(version_str: str) -> Tuple[int, ...]:
     return tuple(parts)
 
 
-def _get_latest_version() -> str:
-    """Fetch the latest release version from GitHub Releases API."""
-    url = f"{RELEASES_URL}/latest"
-    req = urllib.request.Request(url)
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("User-Agent", "dcc-mcp-zbrush-bootstrap/1.0")
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data.get("tag_name", "").lstrip("v")
-    except Exception:
-        return "0.0.0"
-
-
 # ---------------------------------------------------------------------------
 # Step 1: Install wheel
 # ---------------------------------------------------------------------------
@@ -235,7 +221,8 @@ def download_plugin_zip(version: str, output_dir: Path, dry_run: bool = False) -
     Returns:
         Path to the downloaded ZIP file.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:[A-Za-z0-9.-]+)?", version):
+        raise ValueError("A fixed release version is required")
     zip_name = f"dcc-mcp-zbrush-plugin-{version}.zip"
     zip_path = output_dir / zip_name
 
@@ -249,19 +236,9 @@ def download_plugin_zip(version: str, output_dir: Path, dry_run: bool = False) -
     if dry_run:
         print(f"[DRY RUN] Would download {GITHUB_REPO} release {tag}")
         print(f"[DRY RUN]   → {zip_path}")
-        # Validate the API is reachable
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                release = json.loads(resp.read().decode("utf-8"))
-                asset = _find_asset(release, r"dcc-mcp-zbrush-plugin.*\.zip$")
-                if asset:
-                    print(f"[DRY RUN]   Found asset: {asset['name']} ({asset['size']} bytes)")
-                else:
-                    print(f"[DRY RUN]   ⚠ No plugin ZIP asset found in release {tag}")
-        except Exception as exc:
-            print(f"[DRY RUN]   ⚠ Could not fetch release info: {exc}")
         return zip_path
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     print(f"[2/5] Downloading {GITHUB_REPO} release {tag} ...")
 
     try:
@@ -271,49 +248,40 @@ def download_plugin_zip(version: str, output_dir: Path, dry_run: bool = False) -
         print(f"       ✗ Failed to fetch release info: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Find the plugin ZIP asset
-    asset = _find_asset(release, r"dcc-mcp-zbrush-plugin.*\.zip$")
-    if not asset:
-        print(f"       ✗ No plugin ZIP asset found in release {tag}", file=sys.stderr)
+    matches = [asset for asset in release.get("assets", []) if asset.get("name") == zip_name]
+    if len(matches) != 1:
+        print(f"       ✗ Release {tag} must contain exactly one {zip_name}", file=sys.stderr)
         sys.exit(1)
+    asset = matches[0]
+    digest = str(asset.get("digest") or "")
+    if not digest.startswith("sha256:") or not re.fullmatch(r"[0-9a-fA-F]{64}", digest[7:]):
+        print("       ✗ Release asset has no immutable SHA256 provenance", file=sys.stderr)
+        sys.exit(1)
+    expected_hash = digest[7:].lower()
 
     download_url = asset["browser_download_url"]
+    expected_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag}/{zip_name}"
+    if download_url != expected_url:
+        print("       ✗ Release asset URL is not the fixed official path", file=sys.stderr)
+        sys.exit(1)
 
-    # Download
+    if zip_path.is_file() and hashlib.sha256(zip_path.read_bytes()).hexdigest() == expected_hash:
+        print(f"       ✓ Reusing SHA256-verified {zip_path.name}")
+        return zip_path
+
     print(f"       Downloading {asset['name']} ({asset['size']} bytes) ...")
-    urllib.request.urlretrieve(download_url, zip_path)
-
-    actual_size = zip_path.stat().st_size
-    print(f"       ✓ Downloaded {zip_path.name} ({actual_size} bytes)")
-
-    # SHA256 verification (if checksum file is available)
-    checksum_asset = _find_asset(release, r"SHA256SUMS")
-    if checksum_asset:
-        try:
-            checksum_url = checksum_asset["browser_download_url"]
-            with urllib.request.urlopen(checksum_url, timeout=15) as resp:
-                checksums = resp.read().decode("utf-8")
-
-            sha256 = hashlib.sha256(zip_path.read_bytes()).hexdigest()
-            expected_line = None
-            for line in checksums.splitlines():
-                if asset["name"] in line:
-                    expected_line = line.strip()
-                    expected_hash = line.split()[0]
-                    if sha256 == expected_hash:
-                        print(f"       ✓ SHA256 verified: {sha256[:16]}...")
-                    else:
-                        print("       ✗ SHA256 mismatch!", file=sys.stderr)
-                        print(f"         Expected: {expected_hash}", file=sys.stderr)
-                        print(f"         Got:      {sha256}", file=sys.stderr)
-                        sys.exit(1)
-                    break
-            if expected_line is None:
-                print(f"       ⚠ No SHA256 entry for {asset['name']} in checksum file — skipping verification")
-        except Exception:
-            print("       ⚠ Could not fetch checksum file — skipping verification")
-    else:
-        print("       ⚠ No SHA256SUMS asset — skipping verification")
+    staged = output_dir / f".{zip_name}.{os.getpid()}.download"
+    staged.unlink(missing_ok=True)
+    try:
+        urllib.request.urlretrieve(download_url, staged)
+        actual_hash = hashlib.sha256(staged.read_bytes()).hexdigest()
+        if actual_hash != expected_hash:
+            print("       ✗ SHA256 mismatch; payload was not cached", file=sys.stderr)
+            sys.exit(1)
+        os.replace(staged, zip_path)
+    finally:
+        staged.unlink(missing_ok=True)
+    print(f"       ✓ SHA256 verified: {expected_hash[:16]}...")
 
     return zip_path
 
@@ -357,6 +325,12 @@ def extract_plugin(
             print("[DRY RUN]   (ZIP not downloaded yet — cannot list contents)")
         return
 
+    if mode == "sidecar":
+        raise RuntimeError(
+            "Direct sidecar extraction is disabled because Python/init.py is shared; "
+            "use `dcc-mcp-zbrush install` for receipt-backed installation"
+        )
+
     print(f"[3/5] Extracting {zip_path.name} → {plugin_dir} (mode={mode}) ...")
     plugin_dir.mkdir(parents=True, exist_ok=True)
 
@@ -367,8 +341,6 @@ def extract_plugin(
             relative_name = None
             if mode == "embedded" and name.startswith("embedded/"):
                 relative_name = name.removeprefix("embedded/")
-            elif mode == "sidecar" and name == "sidecar/mcp_socket_bridge.py":
-                relative_name = "Python/init.py"
             if not relative_name:
                 continue
 
@@ -484,7 +456,7 @@ def print_health_check(mode: str, plugin_dir: Path) -> None:
         print()
         print("  3. Expected response: MCP endpoint info or SSE stream.")
     else:
-        print("  1. Ensure the socket bridge is the user Python startup entry:")
+        print("  1. Ensure the receipt-managed import is present in the shared startup entry:")
         print(f"     {plugin_dir / 'Python' / 'init.py'}")
         print()
         print("  2. Start ZBrush (the socket bridge auto-starts and listens).")
@@ -516,10 +488,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
-              %(prog)s --mode embedded
-              %(prog)s --mode sidecar --mcp-target both
-              %(prog)s --mode embedded --version 0.2.7 --dry-run
-              %(prog)s --mode embedded --skip-plugin --skip-config
+              %(prog)s --mode embedded --version 0.2.24 --dcc-path <ZBrush> --dry-run
+              %(prog)s --mode sidecar --version 0.2.24 --dcc-path <ZBrush> --yes
+              %(prog)s --mode embedded --version 0.2.24 --skip-plugin --skip-config
         """),
     )
     parser.add_argument(
@@ -530,8 +501,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument(
         "--version",
-        default=None,
-        help="Release version to install (default: latest GitHub release)",
+        required=True,
+        help="Fixed release version to install; 'latest' is not accepted",
     )
     parser.add_argument(
         "--plugin-dir",
@@ -565,22 +536,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="Skip MCP config write",
     )
+    parser.add_argument(
+        "--dcc-path",
+        type=Path,
+        default=os.environ.get("ZBRUSH_EXECUTABLE"),
+        help="ZBrush executable or application path",
+    )
+    parser.add_argument("--python", type=Path, default=Path(sys.executable), dest="python_path")
+    parser.add_argument("--yes", action="store_true", help="Confirm plugin lifecycle mutation")
+    parser.add_argument("--json", action="store_true", dest="json_output")
 
     args = parser.parse_args(argv)
 
-    # Resolve version
-    version = args.version or _get_latest_version()
-    if version == "0.0.0":
-        if args.dry_run:
-            version = "0.0.0-dry-run"
-            print(
-                "⚠ Could not determine latest version from GitHub API "
-                "(rate limit or network issue); using placeholder for dry-run.",
-                file=sys.stderr,
-            )
-        else:
-            print("✗ Could not determine latest version and --version not specified", file=sys.stderr)
-            return 1
+    version = args.version
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:[A-Za-z0-9.-]+)?", version):
+        print("✗ A fixed semantic release version is required", file=sys.stderr)
+        return 10
+    if not args.skip_plugin and args.dcc_path is None:
+        print("✗ Pass --dcc-path or set ZBRUSH_EXECUTABLE", file=sys.stderr)
+        return 10
+    if not args.skip_plugin and not args.dry_run and not args.yes:
+        print("✗ Review --dry-run first, then pass --yes", file=sys.stderr)
+        return 10
 
     print("dcc-mcp-zbrush bootstrap installer")
     print(f"  Mode:     {args.mode}")
@@ -598,14 +575,32 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         print("[1/5] Skipped (--skip-wheel)")
 
-    # Step 2-3: Download + extract plugin
+    # Step 2-3: fixed release resolution, verification, and receipt-backed install
     if not args.skip_plugin:
-        cache_dir = Path.home() / ".cache" / "dcc-mcp-zbrush"
-        zip_path = download_plugin_zip(version, cache_dir, dry_run=args.dry_run)
-        if not args.dry_run:
-            extract_plugin(zip_path, plugin_dir, args.mode, dry_run=False)
-        else:
-            extract_plugin(zip_path, plugin_dir, args.mode, dry_run=True)
+        from dcc_mcp_zbrush.cli import main as lifecycle_main
+
+        lifecycle_args = [
+            "install",
+            "--mode",
+            args.mode,
+            "--version",
+            version,
+            "--dcc-path",
+            str(args.dcc_path),
+            "--python",
+            str(args.python_path),
+            "--asset-dir",
+            str(plugin_dir),
+        ]
+        if args.dry_run:
+            lifecycle_args.append("--dry-run")
+        if args.yes:
+            lifecycle_args.append("--yes")
+        if args.json_output:
+            lifecycle_args.append("--json")
+        exit_code = lifecycle_main(lifecycle_args)
+        if exit_code != 0:
+            return exit_code
     else:
         print("[2/5] Skipped (--skip-plugin)")
         print("[3/5] Skipped (--skip-plugin)")

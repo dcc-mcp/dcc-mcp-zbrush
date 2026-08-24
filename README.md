@@ -48,7 +48,7 @@ attach a stable session id with `--meta-json`, query `dcc-mcp-cli stats --range 
 
 
 [![PyPI](https://img.shields.io/pypi/v/dcc-mcp-zbrush)](https://pypi.org/project/dcc-mcp-zbrush/)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange)](https://github.com/dcc-mcp/dcc-mcp-zbrush)
 
@@ -64,37 +64,33 @@ Real ZBrush 2026 evidence from a typed, quiet high-poly workflow: **2,499,970 po
 
 ## Quick install
 
-### 1. Install the Python package
+### 1. Install a fixed wheel version
 
 ```bash
-pip install dcc-mcp-zbrush
+python -m pip install "dcc-mcp-zbrush==<version>"
 ```
 
-This installs the `dcc-mcp-zbrush` Python package — the MCP HTTP server that bridges AI agents to ZBrush. It does **not** include ZBrush plugin files (see step 2).
+The wheel includes the lifecycle CLI and the sidecar bridge payload.
 
-### 2. Install the ZBrush plugin
+### 2. Plan and apply the plugin install
 
-The plugin files (auto-start script, socket bridge) are distributed separately. Download the plugin ZIP from the [latest GitHub Release](https://github.com/dcc-mcp/dcc-mcp-zbrush/releases/latest):
+Set `ZBRUSH_USER_ASSETS_DIR`, then run the standard lifecycle. The installer
+requires an explicit ZBrush path so it can prove the 2026.1+ host floor.
 
-```
-dcc-mcp-zbrush-plugin-<version>.zip
-```
-
-Then run the install script inside the ZIP:
-
-**Windows** (PowerShell):
-```powershell
-.\install\install-windows.ps1
-```
-
-**macOS** (Terminal):
 ```bash
-chmod +x install/install-macos.sh && ./install/install-macos.sh
+dcc-mcp-zbrush install --version <version> --dcc-path "<ZBrush path>" --python python --dry-run --json
+dcc-mcp-zbrush install --version <version> --dcc-path "<ZBrush path>" --python python --yes --json
 ```
 
-The installer resolves the ZBrush Asset Directory and installs the recommended
-sidecar bridge as `Python/init.py`. It fails instead of reporting success when
-no valid Asset Directory is available; pass `-Target` explicitly in that case.
+The fixed release payload is SHA-256 verified before caching. Sidecar mode
+installs a dedicated module and appends a bounded managed block to the shared
+`Python/init.py`; it never overwrites that file. Receipt-backed uninstall and
+rollback restore the previous state. Applying an install or upgrade stages a
+candidate and returns exit `50`; the candidate is committed only after the
+exact ZBrush process, start identity, endpoint, version, and loaded module
+origins pass `verify`.
+
+See the [canonical lifecycle SOP](docs/install.md) ([raw URL](https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md)).
 
 ### 3. Restart ZBrush
 
@@ -117,11 +113,12 @@ sidecar plugin does not guess identity from environment variables or registry
 files; it directs you to `dcc-mcp-cli list` when that external context is not
 available in the ZBrush process.
 
-### 4. Health check
+### 4. Verify host readiness
 
 Verify the dynamically allocated instance URL:
 
 ```bash
+dcc-mcp-zbrush verify --version <version> --dcc-path "<ZBrush path>" --python python --json
 dcc-mcp-cli list
 ```
 
@@ -187,8 +184,8 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 ## Requirements
 
 - ZBrush **2026.1+**
-- Python **3.9+** on the sidecar host (ZBrush itself ships 3.11)
-- `dcc-mcp-core >= 0.19.45`
+- Python **3.10+** on the sidecar host (ZBrush itself ships 3.11)
+- `dcc-mcp-core >= 0.20.14`
 
 ## Environment variables
 
@@ -217,8 +214,9 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 - **PYTHONPATH** — where Python looks for packages (`pip install` handles this)
 - **ZBRUSH_USER_ASSETS_DIR** / **ZBRUSH_PLUGIN_PATH** — plugin scan roots used by ZBrush 2026.1+
 
-`pip install dcc-mcp-zbrush` puts the Python package on `PYTHONPATH`.  
-The plugin ZIP goes into `ZBRUSH_PLUGIN_PATH` (handled by the install scripts above).
+`pip install dcc-mcp-zbrush` puts the Python package on `PYTHONPATH`. The
+lifecycle CLI installs host files transactionally; do not copy a bridge over
+the shared `Python/init.py` manually.
 
 ## Skill authoring
 
@@ -239,10 +237,8 @@ def my_tool(**kwargs) -> dict:
 
 ## Sidecar mode
 
-1. The plugin ZIP includes `sidecar/mcp_socket_bridge.py`; install it as
-   `<Asset Directory>/Python/init.py` (`install-windows.ps1 -Mode sidecar`).
-2. Start ZBrush.
-3. Run the MCP server outside ZBrush:
+After completing the receipt-driven install and restarting ZBrush, run the MCP
+server outside ZBrush:
 
 The sidecar can also start first: it retains the bridge endpoint and retries
 the connection on the first tool call after ZBrush becomes available.

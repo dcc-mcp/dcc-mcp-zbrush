@@ -355,7 +355,7 @@ Minimal mode (`DCC_MCP_MINIMAL=1`) loads only bootstrap + scene at startup. Addi
 | Socket bridge timeout | 120s default, configurable |
 | Connection retry | None (fail-fast on embedded; sidecar connect on start) |
 | Startup time | < 2s (embedded) or < 1s (sidecar) |
-| Python version | 3.9+ |
+| Python version | 3.10+ |
 | ZBrush version | 2026.1+ |
 | Dependencies | `dcc-mcp-core>=0.18.7,<1.0.0` |
 | Transport | MCP Streamable HTTP (2025-03-26) |

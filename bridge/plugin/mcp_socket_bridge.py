@@ -10,6 +10,7 @@ About DCC MCP actions through the official ZBrush Python SDK.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import math
@@ -21,6 +22,7 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, Iterator, Optional
 
@@ -34,6 +36,7 @@ _REQUEST_STATE_LOCK = threading.Lock()
 _ACTIVE_REQUEST: Optional[Dict[str, Any]] = None
 _PUMP_TIMER_ID = 0
 _PUMP_TIMER_CALLBACK: Any = None
+_BRIDGE_INSTANCE_ID = str(uuid.uuid4())
 
 
 def _mark(message: str) -> None:
@@ -43,6 +46,26 @@ def _mark(message: str) -> None:
         return
     with open(log_path, "a", encoding="utf-8") as stream:
         stream.write(message + "\n")
+
+
+def _capture_bootstrap_error(stage: str, error: BaseException) -> None:
+    """Persist a bounded JSONL startup error for ``dcc-mcp-zbrush verify``."""
+    configured = os.environ.get("DCC_MCP_ZBRUSH_BOOTSTRAP_ERRORS", "").strip()
+    default_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = configured or os.path.join(default_root, ".dcc-mcp", "bootstrap-errors.jsonl")
+    payload = {
+        "timestamp": time.time(),
+        "stage": stage,
+        "reason": str(error),
+        "exception_type": type(error).__name__,
+    }
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, sort_keys=True) + "\n")
+    except BaseException:
+        # Startup error reporting must not hide the original bootstrap failure.
+        pass
 
 
 def _env_int(name: str, default: int) -> int:
@@ -170,8 +193,29 @@ def _subtool_name(path: str) -> str:
 
 def _get_session_info() -> Dict[str, Any]:
     zbc = _import_zbc()
+    identity_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dcc_mcp_zbrush_install_identity.json")
+    try:
+        with open(identity_path, "r", encoding="utf-8") as stream:
+            install_identity = json.load(stream)
+    except (OSError, ValueError):
+        install_identity = {}
+    try:
+        with open(__file__, "rb") as stream:
+            bridge_digest = hashlib.sha256(stream.read()).hexdigest()
+    except OSError:
+        bridge_digest = ""
     return {
+        "adapter_version": install_identity.get("adapter_version"),
+        "bridge_instance_id": _BRIDGE_INSTANCE_ID,
+        "bridge_module_path": os.path.abspath(__file__),
+        "bridge_module_sha256": bridge_digest,
+        "install_id": install_identity.get("install_id"),
+        "pid": os.getpid(),
+        "socket_endpoint": install_identity.get("socket_endpoint"),
+        "selected_dcc_path": install_identity.get("dcc_path"),
+        "selected_dcc_sha256": install_identity.get("dcc_sha256"),
         "zbrush_version": f"{int(zbc.zbrush_info(0))}.{int(zbc.zbrush_info(1))}",
+        "zbrush_commands_origin": os.path.abspath(getattr(zbc, "__file__", "")),
         "active_tool_path": str(zbc.get_active_tool_path() or ""),
         "subtool_count": int(zbc.get_subtool_count()),
         "embedded_python": True,
@@ -965,8 +1009,9 @@ def bootstrap_bridge() -> Optional[threading.Thread]:
         _mark("menu registration failed\n" + traceback.format_exc())
     try:
         bridge_thread = _start_bridge(host, port)
-    except BaseException:
+    except BaseException as exc:
         _mark("bootstrap failed\n" + traceback.format_exc())
+        _capture_bootstrap_error("sidecar_bootstrap", exc)
         raise
     _mark(f"bootstrap started {host}:{port}")
     return bridge_thread

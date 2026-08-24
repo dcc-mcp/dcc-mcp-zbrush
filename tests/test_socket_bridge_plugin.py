@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -190,6 +191,25 @@ def test_bridge_bootstrap_continues_when_menu_registration_fails(monkeypatch) ->
 
     assert bridge.bootstrap_bridge() is bridge_thread
     start_bridge.assert_called_once()
+
+
+def test_bridge_bootstrap_failure_is_captured_for_lifecycle_verify(monkeypatch, tmp_path: Path) -> None:
+    bridge = _load_bridge_plugin()
+    error_log = tmp_path / "bootstrap-errors.jsonl"
+    monkeypatch.setenv("DCC_MCP_ZBRUSH_BOOTSTRAP_ERRORS", str(error_log))
+    monkeypatch.setattr(bridge, "_running_in_zbrush", lambda: True)
+    monkeypatch.setattr(bridge, "_install_menu", lambda: True)
+    monkeypatch.setattr(bridge, "_start_bridge", MagicMock(side_effect=RuntimeError("socket bind failed")))
+
+    try:
+        bridge.bootstrap_bridge()
+    except RuntimeError:
+        pass
+
+    payload = json.loads(error_log.read_text(encoding="utf-8").splitlines()[-1])
+    assert payload["stage"] == "sidecar_bootstrap"
+    assert payload["reason"] == "socket bind failed"
+    assert payload["exception_type"] == "RuntimeError"
 
 
 def test_bridge_registers_official_palette_and_buttons() -> None:

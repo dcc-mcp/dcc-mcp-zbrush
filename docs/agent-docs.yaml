@@ -20,7 +20,7 @@ modes:
     default: "Not recommended for released dcc-mcp-core wheels"
   sidecar:
     description: External MCP process with in-ZBrush main-thread bridge
-    stack: "External Python → TCP :9876 → <Asset Directory>/Python/init.py → zbrush.commands"
+    stack: "External Python → TCP :9876 → receipt-managed dedicated bridge → zbrush.commands"
     when: "Production GUI and CI clients"
     default: "Recommended default (dcc-mcp-zbrush --mode sidecar)"
 
@@ -79,8 +79,18 @@ bundled_skills:
       - list_subtools
   - name: zbrush-subtool
     tools: []
+  - name: zbrush-brush
+    tools:
+      - create_wrinkle_brush
+      - load_wrinkle_brush
+  - name: zbrush-viewport
+    tools:
+      - capture_turntable
   - name: zbrush-interchange
     tools: []
+  - name: zbrush-import-to-scene
+    tools:
+      - import_to_scene
 
 key_files:
   - path: src/dcc_mcp_zbrush/server.py
@@ -90,7 +100,7 @@ key_files:
   - path: src/dcc_mcp_zbrush/bridge.py
     role: "Sidecar socket bridge client"
   - path: bridge/plugin/mcp_socket_bridge.py
-    role: "In-ZBrush main-thread TCP bridge installed as Python/init.py"
+    role: "In-ZBrush main-thread TCP bridge imported by a bounded managed init.py block"
   - path: bridge/plugin/dcc_mcp_zbrush/__init__.py
     role: "Auto-start embedded server"
 
@@ -113,22 +123,24 @@ external_docs:
     url: https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html
   - label: Upstream core llms.txt
     url: https://github.com/dcc-mcp/dcc-mcp-core/blob/main/llms.txt
+  - label: Canonical install SOP
+    url: https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md
 
 distribution:
   artifacts:
     - name: PyPI wheel
       package: dcc-mcp-zbrush
-      scope: "Python package (src/dcc_mcp_zbrush/) — MCP server, skills, bridge client"
-      install: pip install dcc-mcp-zbrush
+      scope: "MCP server, skills, bridge client, and lifecycle CLI"
+      install: 'python -m pip install "dcc-mcp-zbrush==<version>"'
     - name: Plugin ZIP
       source: GitHub Release
-      scope: "ZBrush plugin files — auto-start package, socket bridge, install scripts"
-      install: "Download from latest release and run install-windows.ps1 or install-macos.sh"
+      scope: "Fixed-version ZBrush host payload with SHA-256 provenance"
+      install: "Resolved and verified by dcc-mcp-zbrush install"
     - name: Repo source
       source: git clone
       scope: "Everything above + bridge/plugin/ raw sources + tests + tools"
       install: git clone https://github.com/dcc-mcp/dcc-mcp-zbrush.git
-  plugin_zip_note: "The wheel does not bundle bridge/plugin/ — that directory is only in the plugin ZIP or the repo checkout."
+  plugin_zip_note: "Use the receipt-driven lifecycle; never copy a bridge over the shared Python/init.py file."
 
 mcp_endpoint: "http://127.0.0.1:9765/mcp"
 mcp_config:
@@ -140,20 +152,23 @@ mcp_config:
     label: "With gateway (multi-DCC)"
 
 install_steps:
-  - title: "Recommended sidecar install (PyPI + plugin ZIP)"
+  - title: "Recommended receipt-driven sidecar install"
     steps:
-      - "pip install dcc-mcp-zbrush"
-      - "Download plugin ZIP and run installer in sidecar mode"
-      - "Verify <Asset Directory>/Python/init.py exists"
-      - "Restart ZBrush"
+      - 'python -m pip install "dcc-mcp-zbrush==<version>"'
+      - "Set ZBRUSH_USER_ASSETS_DIR to the explicit Asset Directory"
+      - "Plan with dcc-mcp-zbrush install --version <version> --dcc-path <ZBrush-path> --python python --dry-run --json"
+      - "Apply the reviewed plan with --yes --json"
+      - "Restart ZBrush and run dcc-mcp-zbrush verify with the same path flags"
       - "Run dcc-mcp-zbrush --mode sidecar"
   - title: "Sidecar from source checkout"
     steps:
       - "pip install -e \".[dev]\""
-      - "Copy bridge/plugin/mcp_socket_bridge.py to <Asset Directory>/Python/init.py"
-      - "Restart ZBrush"
+      - "Build the plugin ZIP and exercise it through the same lifecycle"
+      - "Never overwrite the shared Python/init.py file"
+      - "Restart ZBrush and run verify"
 
 health_checks:
+  - 'dcc-mcp-zbrush verify --version <version> --dcc-path <ZBrush-path> --python python --json'
   - 'dcc-mcp-cli list  # discovers the exact OS-assigned instance URL'
   - 'call_tool("get_session_info")  # reads version + active tool + subtool count'
   - "SocketBridge.connect()  # sends JSON-RPC ping → expects {\"ok\": true}"
@@ -166,8 +181,14 @@ failure_modes:
     cause: Wrong mode or stale direct URL
     fix: "Start dcc-mcp-zbrush --mode sidecar, then run dcc-mcp-cli list; socket bridge remains on 9876"
   - problem: ZBrushNotAvailableError
-    cause: Socket bridge plugin not installed
-    fix: Copy mcp_socket_bridge.py to <Asset Directory>/Python/init.py and restart ZBrush
+    cause: Socket bridge is not ready
+    fix: Run lifecycle status, restart ZBrush, then run verify
+  - problem: partial install
+    cause: Receipt or managed payload drift
+    fix: Fail closed; inspect the receipt and backup before retrying
+  - problem: checksum mismatch
+    cause: Payload is not the fixed official release asset
+    fix: Do not bypass; select a fixed official version and retry
   - problem: subprocess fails
     cause: "ZBrush Python VM does not support subprocess"
     fix: Use execute_python skill instead

@@ -4,7 +4,7 @@ Source-based workflow for contributors and early adopters.
 
 ## Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - ZBrush 2026.1+ (for embedded / integration tests)
 - Git
 
@@ -19,6 +19,10 @@ pip install -e ".[dev]"
 ```
 
 ## Embedded mode from source
+
+The receipt-driven lifecycle in [install.md](install.md) is the supported host
+installation path. The manual steps below are only for a contributor-owned
+isolated development Asset Directory, never a shared production startup file.
 
 1. Ensure `src` is on ZBrush's `PYTHONPATH` or `ZBRUSH_PLUGIN_PATH`:
 
@@ -47,24 +51,15 @@ Or start manually from ZBrush Python console:
 
 ```python
 import dcc_mcp_zbrush
+
 dcc_mcp_zbrush.start_server(mode="embedded")
 ```
 
 ## Sidecar mode from source
 
-1. Copy the socket bridge plugin to ZBrush startup:
-
-   ```bash
-   # Windows
-   copy bridge\plugin\mcp_socket_bridge.py %ZBRUSH_USER_ASSETS_DIR%\
-
-   # macOS
-   cp bridge/plugin/mcp_socket_bridge.py "$ZBRUSH_USER_ASSETS_DIR/"
-   ```
-
-2. Start ZBrush.
-
-3. Run the MCP server outside ZBrush:
+Build a local plugin ZIP and exercise it through lifecycle tests. Do not copy
+the bridge over `<AssetDir>/Python/init.py`. After installing through the
+standard lifecycle and restarting ZBrush, run the MCP server outside ZBrush:
 
    ```bash
    dcc-mcp-zbrush --mode sidecar --socket-port 9876
@@ -108,7 +103,7 @@ The project uses GitHub Actions for CI (`.github/workflows/ci.yml`):
 
 | Check | What it does |
 |-------|-------------|
-| `test` | Runs unit tests across Python 3.9–3.12 on Ubuntu, Windows, macOS |
+| `test` | Runs unit tests across Python 3.10–3.12 on Ubuntu, Windows, macOS |
 | `lint` | Ruff check + format |
 | `lint-skills` | Validates SKILL.md frontmatter |
 | `validate-skills` | Validates skill package definitions |

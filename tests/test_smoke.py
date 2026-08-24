@@ -235,23 +235,23 @@ class TestPluginExtraction:
 
         mod.extract_plugin(zip_path, target, "embedded", dry_run=False)
 
-        # Embedded files should exist
         assert (target / "dcc_mcp_zbrush" / "__init__.py").exists()
         assert (target / "dcc_mcp_zbrush" / "core.py").exists()
         assert (target / "dcc_mcp_zbrush_plugin.py").exists()
-        # Sidecar file should NOT exist (skipped in embedded mode)
         assert not (target / "mcp_socket_bridge.py").exists()
 
-    def test_sidecar_mode_installs_socket_bridge_as_user_python_init(self, tmp_path: Path) -> None:
+    def test_sidecar_direct_extraction_cannot_overwrite_shared_init(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
         zip_path = self._make_test_zip(tmp_path)
         target = tmp_path / "ZBrushAssets"
+        shared_init = target / "Python" / "init.py"
+        shared_init.parent.mkdir(parents=True)
+        shared_init.write_text("# studio startup\n", encoding="utf-8")
 
-        mod.extract_plugin(zip_path, target, "sidecar", dry_run=False)
+        with pytest.raises(RuntimeError, match="lifecycle|dcc-mcp-zbrush install"):
+            mod.extract_plugin(zip_path, target, "sidecar", dry_run=False)
 
-        assert (target / "Python" / "init.py").read_text(encoding="utf-8") == "# socket bridge"
-        assert not (target / "mcp_socket_bridge.py").exists()
-        assert not (target / "dcc_mcp_zbrush_plugin.py").exists()
+        assert shared_init.read_text(encoding="utf-8") == "# studio startup\n"
 
     def test_extract_creates_target_directory(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -300,26 +300,38 @@ class TestDryRun:
 
     def test_dry_run_plugin_download_no_file(self, tmp_path: Path) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
-        # We'll mock the API response
-        with patch.object(mod, "urllib") as mock_urllib:
-            # Mock the API to return a minimal release
-            mock_resp = mock_urllib.request.urlopen.return_value.__enter__.return_value
-            mock_resp.read.return_value = json.dumps(
-                {
-                    "tag_name": "v0.2.7",
-                    "assets": [
-                        {
-                            "name": "dcc-mcp-zbrush-plugin-0.2.7.zip",
-                            "size": 12345,
-                            "browser_download_url": "https://example.com/plugin.zip",
-                        }
-                    ],
-                }
-            ).encode("utf-8")
+        result = mod.download_plugin_zip("0.2.7", tmp_path, dry_run=True)
 
-            result = mod.download_plugin_zip("0.2.7", tmp_path, dry_run=True)
-            # In dry-run mode, no actual file is written
-            assert not result.exists()
+        assert not result.exists()
+
+    def test_legacy_download_checksum_mismatch_never_enters_cache(self, tmp_path: Path) -> None:
+        mod = _load_tool_module("bootstrap_agent_install.py")
+        release = {
+            "assets": [
+                {
+                    "name": "dcc-mcp-zbrush-plugin-0.2.7.zip",
+                    "size": 7,
+                    "digest": f"sha256:{'0' * 64}",
+                    "browser_download_url": (
+                        "https://github.com/dcc-mcp/dcc-mcp-zbrush/releases/download/"
+                        "v0.2.7/dcc-mcp-zbrush-plugin-0.2.7.zip"
+                    ),
+                }
+            ]
+        }
+        response = patch.object(mod.urllib.request, "urlopen")
+        download = patch.object(
+            mod.urllib.request,
+            "urlretrieve",
+            side_effect=lambda _url, path: Path(path).write_bytes(b"payload"),
+        )
+        with response as mocked_response, download:
+            mocked_response.return_value.__enter__.return_value.read.return_value = json.dumps(release).encode()
+            with pytest.raises(SystemExit):
+                mod.download_plugin_zip("0.2.7", tmp_path)
+
+        assert not (tmp_path / "dcc-mcp-zbrush-plugin-0.2.7.zip").exists()
+        assert not list(tmp_path.glob("*.download"))
 
     def test_wheel_install_called_when_not_dry_run(self) -> None:
         mod = _load_tool_module("bootstrap_agent_install.py")
@@ -505,9 +517,17 @@ class TestPluginZipStructure:
         output = pack_mod.pack_plugin(tmp_path, "0.2.0")
         with zipfile.ZipFile(output, "r") as zf:
             names = zf.namelist()
+            windows = zf.read("install/install-windows.ps1").decode("utf-8")
+            macos = zf.read("install/install-macos.sh").decode("utf-8")
+            readme = zf.read("README-INSTALL.txt").decode("utf-8")
 
         assert "install/install-windows.ps1" in names
         assert "install/install-macos.sh" in names
+        assert "dcc-mcp-zbrush install" in windows
+        assert "dcc-mcp-zbrush install" in macos
+        assert "Copy-Item" not in windows
+        assert "sidecar/mcp_socket_bridge.py" not in macos
+        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md" in readme
 
 
 # ---------------------------------------------------------------------------
@@ -603,11 +623,11 @@ class TestDocsDrift:
 
     def test_pip_install_in_readme(self) -> None:
         content = self._read_doc("README.md")
-        assert "pip install dcc-mcp-zbrush" in content, "pip install not found in README.md"
+        assert "dcc-mcp-zbrush==<version>" in content, "fixed wheel install not found in README.md"
 
     def test_pip_install_in_llms_txt(self) -> None:
         content = self._read_doc("llms.txt")
-        assert "pip install dcc-mcp-zbrush" in content, "pip install not found in llms.txt"
+        assert "dcc-mcp-zbrush==<version>" in content, "fixed wheel install not found in llms.txt"
 
     # --- Health check assertions ---
 
@@ -673,7 +693,7 @@ class TestDocsDrift:
 
     def test_python_version_in_readme_badge(self) -> None:
         content = self._read_doc("README.md")
-        assert "3.9" in content, "Python 3.9 requirement not found in README.md badge area"
+        assert "3.10" in content, "Python 3.10 requirement not found in README.md badge area"
 
     # --- AGENTS.md / llms.txt entry point check ---
 
@@ -681,6 +701,15 @@ class TestDocsDrift:
         content = self._read_doc("llms.txt")
         # Should have numbered install steps or pip install
         assert "pip install" in content or "Install" in content
+
+    def test_canonical_install_sop_covers_lifecycle_contract(self) -> None:
+        content = self._read_doc("docs/install.md")
+        for operation in ("install", "status", "verify", "uninstall", "upgrade"):
+            assert f"dcc-mcp-zbrush {operation}" in content
+        for exit_code in ("`0`", "`10`", "`20`", "`30`", "`40`", "`50`"):
+            assert exit_code in content
+        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md" in content
+        assert "Windows" in content and "macOS" in content and "Linux" in content
 
     def test_agents_md_has_mode_table(self) -> None:
         content = self._read_doc("AGENTS.md")
