@@ -90,7 +90,7 @@ candidate and returns exit `50`; the candidate is committed only after the
 exact ZBrush process, start identity, endpoint, version, and loaded module
 origins pass `verify`.
 
-See the [canonical lifecycle SOP](docs/install.md) ([raw URL](https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md)).
+See the [canonical lifecycle SOP](install.md) ([raw URL](https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md)).
 
 ### 3. Restart ZBrush
 

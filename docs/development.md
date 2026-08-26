@@ -20,7 +20,7 @@ pip install -e ".[dev]"
 
 ## Embedded mode from source
 
-The receipt-driven lifecycle in [install.md](install.md) is the supported host
+The receipt-driven lifecycle in [install.md](../install.md) is the supported host
 installation path. The manual steps below are only for a contributor-owned
 isolated development Asset Directory, never a shared production startup file.
 

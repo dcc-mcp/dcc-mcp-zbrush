@@ -58,7 +58,7 @@ def _install_readme(version: str) -> str:
         do not copy payload files over that file manually.
 
         Canonical instructions:
-        https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md
+        https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md
 
         Helper scripts in ``install/`` only delegate to the standard lifecycle
         command. They do not implement a second extraction path.
