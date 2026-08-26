@@ -82,4 +82,4 @@ Default minimal mode loads zbrush-scripting, zbrush-scene.
 
 - ZBrush Python SDK: https://developers.maxon.net/docs/zbrush/py/2026_1_0/index.html
 - Upstream core llms.txt: https://github.com/dcc-mcp/dcc-mcp-core/blob/main/llms.txt
-- Canonical install SOP: https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md
+- Canonical install SOP: https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md

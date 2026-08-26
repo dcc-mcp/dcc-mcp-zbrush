@@ -38,7 +38,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/dcc-mcp/dcc-mcp-zbrush"
 Repository = "https://github.com/dcc-mcp/dcc-mcp-zbrush"
-Installation = "https://github.com/dcc-mcp/dcc-mcp-zbrush/blob/main/docs/install.md"
+Installation = "https://github.com/dcc-mcp/dcc-mcp-zbrush/blob/main/install.md"
 
 [project.scripts]
 dcc-mcp-zbrush = "dcc_mcp_zbrush.cli:main"

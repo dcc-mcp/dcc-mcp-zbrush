@@ -124,7 +124,7 @@ external_docs:
   - label: Upstream core llms.txt
     url: https://github.com/dcc-mcp/dcc-mcp-core/blob/main/llms.txt
   - label: Canonical install SOP
-    url: https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md
+    url: https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md
 
 distribution:
   artifacts:

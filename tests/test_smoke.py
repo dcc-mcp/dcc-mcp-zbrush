@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import platform
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -527,7 +528,7 @@ class TestPluginZipStructure:
         assert "dcc-mcp-zbrush install" in macos
         assert "Copy-Item" not in windows
         assert "sidecar/mcp_socket_bridge.py" not in macos
-        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md" in readme
+        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md" in readme
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +538,18 @@ class TestPluginZipStructure:
 
 class TestDocsDrift:
     """Cross-verify README, llms.txt, and AGENTS.md against source code truth."""
+
+    _REQUIRED_INSTALL_SECTIONS = (
+        "## Requirements",
+        "## Supported versions",
+        "## Agent quick path",
+        "## Manual path",
+        "## Verify",
+        "## Upgrade",
+        "## Uninstall",
+        "## Troubleshooting",
+    )
+    _CANONICAL_INSTALL_RAW_URL = "https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md"
 
     # --- Source truth (single source) ---
 
@@ -702,13 +715,71 @@ class TestDocsDrift:
         # Should have numbered install steps or pip install
         assert "pip install" in content or "Install" in content
 
+    def test_root_install_sop_is_the_complete_canonical_contract(self) -> None:
+        install_path = _PROJECT_ROOT / "install.md"
+        assert install_path.is_file(), "the canonical Install SOP must live at repository-root install.md"
+
+        content = install_path.read_text(encoding="utf-8")
+        headings = set(content.splitlines())
+        missing_sections = [section for section in self._REQUIRED_INSTALL_SECTIONS if section not in headings]
+        assert missing_sections == [], f"root install.md is missing required SOP sections: {missing_sections}"
+        assert self._CANONICAL_INSTALL_RAW_URL in content
+        assert "main/docs/install.md" not in content
+
+        tracked_markdown = subprocess.check_output(
+            ["git", "ls-files", "*.md"],
+            cwd=_PROJECT_ROOT,
+            text=True,
+            encoding="utf-8",
+        ).splitlines()
+        full_contracts = []
+        for relative_path in tracked_markdown:
+            candidate = self._read_doc(relative_path)
+            if all(section in set(candidate.splitlines()) for section in self._REQUIRED_INSTALL_SECTIONS):
+                full_contracts.append(relative_path.replace("\\", "/"))
+        assert full_contracts == ["install.md"], f"the complete Install SOP must have one owner: {full_contracts}"
+
+    def test_public_install_references_use_the_root_contract(self) -> None:
+        expected_references = {
+            "README.md": ("(install.md)", self._CANONICAL_INSTALL_RAW_URL),
+            "docs/development.md": ("[install.md](../install.md)",),
+            "pyproject.toml": ('Installation = "https://github.com/dcc-mcp/dcc-mcp-zbrush/blob/main/install.md"',),
+            "docs/agent-docs.yaml": (self._CANONICAL_INSTALL_RAW_URL,),
+            "AGENTS.md": (self._CANONICAL_INSTALL_RAW_URL,),
+            ".claude/CLAUDE.md": (self._CANONICAL_INSTALL_RAW_URL,),
+            "tools/pack_plugin.py": (self._CANONICAL_INSTALL_RAW_URL,),
+        }
+        legacy_reference = "main/docs/" + "install.md"
+
+        failures = []
+        for relative_path, required_fragments in expected_references.items():
+            content = self._read_doc(relative_path)
+            for fragment in required_fragments:
+                if fragment not in content:
+                    failures.append(f"{relative_path} is missing {fragment!r}")
+            if legacy_reference in content:
+                failures.append(f"{relative_path} still references {legacy_reference!r}")
+
+        assert failures == [], "public install references are inconsistent:\n" + "\n".join(failures)
+
+    def test_legacy_docs_install_is_only_a_short_pointer(self) -> None:
+        pointer_path = _PROJECT_ROOT / "docs" / "install.md"
+        assert pointer_path.is_file(), "the former docs/install.md route must remain as a compatibility pointer"
+
+        content = pointer_path.read_text(encoding="utf-8")
+        assert "../install.md" in content
+        assert self._CANONICAL_INSTALL_RAW_URL in content
+        assert len(content) <= 600, "docs/install.md must not duplicate the complete root Install SOP"
+        assert not any(section in set(content.splitlines()) for section in self._REQUIRED_INSTALL_SECTIONS)
+        assert "dcc-mcp-zbrush install" not in content
+
     def test_canonical_install_sop_covers_lifecycle_contract(self) -> None:
-        content = self._read_doc("docs/install.md")
+        content = self._read_doc("install.md")
         for operation in ("install", "status", "verify", "uninstall", "upgrade"):
             assert f"dcc-mcp-zbrush {operation}" in content
         for exit_code in ("`0`", "`10`", "`20`", "`30`", "`40`", "`50`"):
             assert exit_code in content
-        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/docs/install.md" in content
+        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md" in content
         assert "Windows" in content and "macOS" in content and "Linux" in content
 
     def test_agents_md_has_mode_table(self) -> None:
