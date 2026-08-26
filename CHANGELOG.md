@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.26](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.25...v0.2.26) (2026-08-26)
+
+
+### Bug Fixes
+
+* harden install doc ownership checks ([f7e6089](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/f7e6089432c0c80be74970bb7fa1514f1376bb4d))
+* validate visible install contract ([21f24de](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/21f24dee8a7cd8adb4064d8ede8d01855c46ff13))
+
+
+### Documentation
+
+* establish canonical install contract ([b6d52c6](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/b6d52c69a3b99e8409ec05a123b729af84af0558))
+
 ## [0.2.25](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.24...v0.2.25) (2026-08-24)
 
 
