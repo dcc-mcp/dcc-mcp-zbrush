@@ -264,9 +264,11 @@ The project ships through three independent channels. Know the boundary of each:
 
 The wheel (`pyproject.toml:46-47`) only packages `src/dcc_mcp_zbrush`. The `bridge/plugin/` directory is **not** in the wheel — it is distributed via the plugin ZIP or available in the repo checkout.
 
-### 6.4 Plugin Installation
+### 6.4 Installation ownership
 
-Copy `bridge/plugin/mcp_socket_bridge.py` directly into the ZBrush Asset Directory or a `ZBRUSH_PLUGIN_PATH` root, then **restart ZBrush**. The plugin auto-starts the TCP listener on next ZBrush launch.
+This design section is not an operational installation guide. Follow the
+[canonical Install SOP](../install.md) for the supported, transactional plugin
+installation, restart, verification, upgrade, and uninstall workflow.
 
 ### 6.5 Auto-Start Plugin (Embedded Mode)
 
@@ -335,15 +337,13 @@ Minimal mode (`DCC_MCP_MINIMAL=1`) loads only bootstrap + scene at startup. Addi
 
 | Step | Agent | Human |
 |------|-------|-------|
-| Install dcc-mcp-zbrush Python package | ✓ | |
-| Set `PYTHONPATH` / `ZBRUSH_PLUGIN_PATH` | | ✓ (needs ZBrush restart) |
-| Drop `mcp_socket_bridge.py` into the Asset/plugin scan root | | ✓ (needs file system access) |
-| Launch ZBrush | | ✓ |
+| Plan and apply the [canonical Install SOP](../install.md) lifecycle transaction | ✓ | ✓ (reviews the plan) |
+| Select the ZBrush host path and approve restart deferral | | ✓ |
+| Launch or restart ZBrush when the lifecycle report requests it | | ✓ |
 | Verify MCP endpoint is reachable | ✓ | |
 | Load a skill | ✓ | |
 | Call a tool | ✓ | |
 | Interpret errors from `zbrush.commands` | ✓ | |
-| Restart ZBrush after plugin update | | ✓ |
 
 ---
 

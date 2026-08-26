@@ -41,23 +41,6 @@ def _load_tool_module(name: str):
     return mod
 
 
-def _without_html_comments(text: str) -> str:
-    """Remove HTML comments while retaining their line boundaries."""
-    visible: list[str] = []
-    cursor = 0
-    while cursor < len(text):
-        comment_start = text.find("<!--", cursor)
-        if comment_start < 0:
-            visible.append(text[cursor:])
-            break
-        visible.append(text[cursor:comment_start])
-        comment_end = text.find("-->", comment_start + 4)
-        hidden_end = len(text) if comment_end < 0 else comment_end + 3
-        visible.append("".join(character for character in text[comment_start:hidden_end] if character in "\r\n"))
-        cursor = hidden_end
-    return "".join(visible)
-
-
 def _fence_marker(line: str) -> tuple[str, int, str] | None:
     """Parse an indented-at-most-three-spaces CommonMark fence marker."""
     content = line.rstrip("\r\n")
@@ -73,24 +56,86 @@ def _fence_marker(line: str) -> tuple[str, int, str] | None:
     return marker, width, stripped[width:]
 
 
+def _is_backslash_escaped(text: str, index: int) -> bool:
+    """Return whether the token at index is escaped by an odd backslash run."""
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
+
+
+def _code_span_end(text: str, start: int, width: int) -> int | None:
+    """Find a CommonMark-style closing backtick run with the exact opener width."""
+    cursor = start + width
+    while cursor < len(text):
+        marker_start = text.find("`", cursor)
+        if marker_start < 0:
+            return None
+        marker_end = marker_start
+        while marker_end < len(text) and text[marker_end] == "`":
+            marker_end += 1
+        if marker_end - marker_start == width:
+            return marker_end
+        cursor = marker_end
+    return None
+
+
 def _rendered_visible_markdown(text: str) -> str:
-    """Return Markdown outside HTML comments and fenced code blocks."""
-    visible_lines: list[str] = []
+    """Walk Markdown tokens and omit real HTML comments and fenced code blocks."""
+    visible: list[str] = []
     active_fence: tuple[str, int] | None = None
-    for line in _without_html_comments(text).splitlines(keepends=True):
-        marker = _fence_marker(line)
-        if active_fence is None:
-            if marker is None:
-                visible_lines.append(line)
-            else:
+    cursor = 0
+    line_start = 0
+    while cursor < len(text):
+        if cursor == line_start:
+            line_end = text.find("\n", cursor)
+            line_end = len(text) if line_end < 0 else line_end + 1
+            line = text[cursor:line_end]
+            marker = _fence_marker(line)
+            if active_fence is not None:
+                if marker is not None:
+                    marker_char, marker_width, remainder = marker
+                    if marker_char == active_fence[0] and marker_width >= active_fence[1] and not remainder.strip():
+                        active_fence = None
+                visible.append("".join(character for character in line if character in "\r\n"))
+                cursor = line_end
+                line_start = line_end
+                continue
+            if marker is not None and not (marker[0] == "`" and "`" in marker[2]):
                 active_fence = (marker[0], marker[1])
+                visible.append("".join(character for character in line if character in "\r\n"))
+                cursor = line_end
+                line_start = line_end
+                continue
+
+        if text.startswith("<!--", cursor) and not _is_backslash_escaped(text, cursor):
+            comment_end = text.find("-->", cursor + 4)
+            hidden_end = len(text) if comment_end < 0 else comment_end + 3
+            visible.append("".join(character for character in text[cursor:hidden_end] if character in "\r\n"))
+            cursor = hidden_end
             continue
 
-        if marker is not None:
-            marker_char, marker_width, remainder = marker
-            if marker_char == active_fence[0] and marker_width >= active_fence[1] and not remainder.strip():
-                active_fence = None
-    return "".join(visible_lines)
+        if text[cursor] == "`" and not _is_backslash_escaped(text, cursor):
+            marker_end = cursor
+            while marker_end < len(text) and text[marker_end] == "`":
+                marker_end += 1
+            span_end = _code_span_end(text, cursor, marker_end - cursor)
+            if span_end is not None:
+                visible.append(text[cursor:span_end])
+                line_break = text.rfind("\n", cursor, span_end)
+                if line_break >= 0:
+                    line_start = line_break + 1
+                cursor = span_end
+                continue
+
+        character = text[cursor]
+        visible.append(character)
+        cursor += 1
+        if character == "\n":
+            line_start = cursor
+    return "".join(visible)
 
 
 def _has_complete_install_contract(
@@ -841,6 +886,19 @@ class TestDocsDrift:
                 self._REQUIRED_INSTALL_PROSE,
             )
 
+    @pytest.mark.parametrize(
+        ("opener", "closer"),
+        (("\\<!--", "-->"), ("`<!--`", "`-->`")),
+        ids=("escaped-comment-marker", "inline-code-comment-marker"),
+    )
+    def test_install_owner_scan_keeps_rendered_comment_markers_visible(self, opener: str, closer: str) -> None:
+        complete_decoy = "\n".join((*self._REQUIRED_INSTALL_SECTIONS, *self._REQUIRED_INSTALL_PROSE))
+        assert _has_complete_install_contract(
+            f"{opener}\n{complete_decoy}\n{closer}",
+            self._REQUIRED_INSTALL_SECTIONS,
+            self._REQUIRED_INSTALL_PROSE,
+        )
+
     def test_visible_markdown_scanner_handles_multiline_comments_and_fence_lengths(self) -> None:
         document = """Visible before
 <!-- hidden on one line -->
@@ -895,6 +953,24 @@ Visible after
                 failures.append(f"{relative_path} still contains legacy canonical path {legacy_reference!r}")
 
         assert failures == [], "public install references are inconsistent:\n" + "\n".join(failures)
+
+    def test_public_docs_do_not_offer_a_direct_bridge_copy_install_path(self) -> None:
+        bridge_filename = "mcp_socket_bridge.py"
+        install_destinations = ("Asset Directory", "ZBRUSH_PLUGIN_PATH")
+        offenders = []
+        for relative_path in _tracked_public_doc_paths():
+            if relative_path == "install.md":
+                continue
+            visible = _rendered_visible_markdown(self._read_doc(relative_path))
+            paragraphs = visible.replace("\r\n", "\n").split("\n\n")
+            if any(
+                bridge_filename in paragraph and any(target in paragraph for target in install_destinations)
+                for paragraph in paragraphs
+            ):
+                offenders.append(relative_path)
+
+        assert offenders == [], f"public docs contain a competing direct bridge install path: {offenders}"
+        assert "[canonical Install SOP](../install.md)" in _rendered_visible_markdown(self._read_doc("docs/PRD.md"))
 
     def test_legacy_docs_install_is_only_a_short_pointer(self) -> None:
         pointer_path = _PROJECT_ROOT / "docs" / "install.md"
