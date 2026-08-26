@@ -358,6 +358,11 @@ def _generate_llms_txt(data: dict) -> str:
         ]
     )
 
+    lines.extend(["## External docs", ""])
+    for doc in data["external_docs"]:
+        lines.append(f"- {doc['label']}: {doc['url']}")
+    lines.append("")
+
     return "\n".join(lines)
 
 

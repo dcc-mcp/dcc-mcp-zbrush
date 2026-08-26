@@ -41,6 +41,87 @@ def _load_tool_module(name: str):
     return mod
 
 
+def _without_html_comments(text: str) -> str:
+    """Remove HTML comments while retaining their line boundaries."""
+    visible: list[str] = []
+    cursor = 0
+    while cursor < len(text):
+        comment_start = text.find("<!--", cursor)
+        if comment_start < 0:
+            visible.append(text[cursor:])
+            break
+        visible.append(text[cursor:comment_start])
+        comment_end = text.find("-->", comment_start + 4)
+        hidden_end = len(text) if comment_end < 0 else comment_end + 3
+        visible.append("".join(character for character in text[comment_start:hidden_end] if character in "\r\n"))
+        cursor = hidden_end
+    return "".join(visible)
+
+
+def _fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Parse an indented-at-most-three-spaces CommonMark fence marker."""
+    content = line.rstrip("\r\n")
+    stripped = content.lstrip(" ")
+    if len(content) - len(stripped) > 3 or not stripped or stripped[0] not in {"`", "~"}:
+        return None
+    marker = stripped[0]
+    width = 0
+    while width < len(stripped) and stripped[width] == marker:
+        width += 1
+    if width < 3:
+        return None
+    return marker, width, stripped[width:]
+
+
+def _rendered_visible_markdown(text: str) -> str:
+    """Return Markdown outside HTML comments and fenced code blocks."""
+    visible_lines: list[str] = []
+    active_fence: tuple[str, int] | None = None
+    for line in _without_html_comments(text).splitlines(keepends=True):
+        marker = _fence_marker(line)
+        if active_fence is None:
+            if marker is None:
+                visible_lines.append(line)
+            else:
+                active_fence = (marker[0], marker[1])
+            continue
+
+        if marker is not None:
+            marker_char, marker_width, remainder = marker
+            if marker_char == active_fence[0] and marker_width >= active_fence[1] and not remainder.strip():
+                active_fence = None
+    return "".join(visible_lines)
+
+
+def _has_complete_install_contract(
+    text: str, required_sections: tuple[str, ...], required_prose: tuple[str, ...]
+) -> bool:
+    """Return whether rendered-visible text contains the complete Install SOP."""
+    visible = _rendered_visible_markdown(text)
+    lines = set(visible.splitlines())
+    return all(section in lines for section in required_sections) and all(
+        fragment in visible for fragment in required_prose
+    )
+
+
+def _tracked_public_doc_paths() -> list[str]:
+    """Return tracked public documentation and discovery text files."""
+    tracked = subprocess.check_output(
+        ["git", "ls-files"],
+        cwd=_PROJECT_ROOT,
+        text=True,
+        encoding="utf-8",
+    ).splitlines()
+    excluded_roots = {"build", "dist", "tests", "vendor"}
+    public_suffixes = {".md", ".mdx", ".rst", ".txt"}
+    return sorted(
+        relative_path.replace("\\", "/")
+        for relative_path in tracked
+        if Path(relative_path).suffix.lower() in public_suffixes
+        and (not Path(relative_path).parts or Path(relative_path).parts[0] not in excluded_roots)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap unit tests
 # ---------------------------------------------------------------------------
@@ -550,6 +631,14 @@ class TestDocsDrift:
         "## Troubleshooting",
     )
     _CANONICAL_INSTALL_RAW_URL = "https://raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md"
+    _REQUIRED_INSTALL_PROSE = (
+        "This is the canonical install SOP",
+        "The default `sidecar` mode installs",
+        "An applied install or upgrade returns exit",
+        "For sidecar mode, `verify` checks",
+        "Uninstall is receipt-driven and transactional",
+        "All lifecycle verbs accept",
+    )
 
     # --- Source truth (single source) ---
 
@@ -720,24 +809,59 @@ class TestDocsDrift:
         assert install_path.is_file(), "the canonical Install SOP must live at repository-root install.md"
 
         content = install_path.read_text(encoding="utf-8")
-        headings = set(content.splitlines())
+        visible = _rendered_visible_markdown(content)
+        headings = set(visible.splitlines())
         missing_sections = [section for section in self._REQUIRED_INSTALL_SECTIONS if section not in headings]
         assert missing_sections == [], f"root install.md is missing required SOP sections: {missing_sections}"
-        assert self._CANONICAL_INSTALL_RAW_URL in content
+        assert _has_complete_install_contract(content, self._REQUIRED_INSTALL_SECTIONS, self._REQUIRED_INSTALL_PROSE)
+        assert self._CANONICAL_INSTALL_RAW_URL in visible
         assert "main/docs/install.md" not in content
 
-        tracked_markdown = subprocess.check_output(
-            ["git", "ls-files", "*.md"],
-            cwd=_PROJECT_ROOT,
-            text=True,
-            encoding="utf-8",
-        ).splitlines()
+        tracked_markdown = _tracked_public_doc_paths()
+        assert "llms.txt" in tracked_markdown
         full_contracts = []
         for relative_path in tracked_markdown:
             candidate = self._read_doc(relative_path)
-            if all(section in set(candidate.splitlines()) for section in self._REQUIRED_INSTALL_SECTIONS):
+            if _has_complete_install_contract(candidate, self._REQUIRED_INSTALL_SECTIONS, self._REQUIRED_INSTALL_PROSE):
                 full_contracts.append(relative_path.replace("\\", "/"))
         assert full_contracts == ["install.md"], f"the complete Install SOP must have one owner: {full_contracts}"
+
+    def test_hidden_or_fenced_install_contract_cannot_become_an_owner(self) -> None:
+        complete_decoy = "\n".join((*self._REQUIRED_INSTALL_SECTIONS, *self._REQUIRED_INSTALL_PROSE))
+        deceptive_documents = (
+            f"<!--\n{complete_decoy}\n-->",
+            f"````markdown\n{complete_decoy}\n```\nstill fenced\n````",
+            f"~~~~~md\n{complete_decoy}\n~~~~~~",
+        )
+
+        for deceptive_document in deceptive_documents:
+            assert not _has_complete_install_contract(
+                deceptive_document,
+                self._REQUIRED_INSTALL_SECTIONS,
+                self._REQUIRED_INSTALL_PROSE,
+            )
+
+    def test_visible_markdown_scanner_handles_multiline_comments_and_fence_lengths(self) -> None:
+        document = """Visible before
+<!-- hidden on one line -->
+<!--
+hidden across lines
+-->
+````markdown
+hidden in a long backtick fence
+```
+still hidden after a short closer
+`````
+Visible between
+~~~text
+hidden in a tilde fence
+~~~~
+Visible after
+"""
+
+        visible = _rendered_visible_markdown(document)
+        assert [line for line in visible.splitlines() if line] == ["Visible before", "Visible between", "Visible after"]
+        assert "hidden" not in visible
 
     def test_public_install_references_use_the_root_contract(self) -> None:
         expected_references = {
@@ -747,6 +871,7 @@ class TestDocsDrift:
             "docs/agent-docs.yaml": (self._CANONICAL_INSTALL_RAW_URL,),
             "AGENTS.md": (self._CANONICAL_INSTALL_RAW_URL,),
             ".claude/CLAUDE.md": (self._CANONICAL_INSTALL_RAW_URL,),
+            "llms.txt": (self._CANONICAL_INSTALL_RAW_URL,),
             "tools/pack_plugin.py": (self._CANONICAL_INSTALL_RAW_URL,),
         }
         legacy_reference = "main/docs/" + "install.md"
@@ -754,11 +879,20 @@ class TestDocsDrift:
         failures = []
         for relative_path, required_fragments in expected_references.items():
             content = self._read_doc(relative_path)
+            searchable_content = (
+                _rendered_visible_markdown(content)
+                if Path(relative_path).suffix.lower() in {".md", ".mdx", ".rst", ".txt"}
+                else content
+            )
             for fragment in required_fragments:
-                if fragment not in content:
+                if fragment not in searchable_content:
                     failures.append(f"{relative_path} is missing {fragment!r}")
             if legacy_reference in content:
                 failures.append(f"{relative_path} still references {legacy_reference!r}")
+
+        for relative_path in _tracked_public_doc_paths():
+            if legacy_reference in self._read_doc(relative_path):
+                failures.append(f"{relative_path} still contains legacy canonical path {legacy_reference!r}")
 
         assert failures == [], "public install references are inconsistent:\n" + "\n".join(failures)
 
@@ -767,20 +901,23 @@ class TestDocsDrift:
         assert pointer_path.is_file(), "the former docs/install.md route must remain as a compatibility pointer"
 
         content = pointer_path.read_text(encoding="utf-8")
-        assert "../install.md" in content
-        assert self._CANONICAL_INSTALL_RAW_URL in content
+        visible = _rendered_visible_markdown(content)
+        assert "../install.md" in visible
+        assert self._CANONICAL_INSTALL_RAW_URL in visible
         assert len(content) <= 600, "docs/install.md must not duplicate the complete root Install SOP"
-        assert not any(section in set(content.splitlines()) for section in self._REQUIRED_INSTALL_SECTIONS)
-        assert "dcc-mcp-zbrush install" not in content
+        assert not any(section in set(visible.splitlines()) for section in self._REQUIRED_INSTALL_SECTIONS)
+        assert "dcc-mcp-zbrush install" not in visible
 
     def test_canonical_install_sop_covers_lifecycle_contract(self) -> None:
         content = self._read_doc("install.md")
+        visible = _rendered_visible_markdown(content)
+        assert _has_complete_install_contract(content, self._REQUIRED_INSTALL_SECTIONS, self._REQUIRED_INSTALL_PROSE)
         for operation in ("install", "status", "verify", "uninstall", "upgrade"):
             assert f"dcc-mcp-zbrush {operation}" in content
         for exit_code in ("`0`", "`10`", "`20`", "`30`", "`40`", "`50`"):
-            assert exit_code in content
-        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md" in content
-        assert "Windows" in content and "macOS" in content and "Linux" in content
+            assert exit_code in visible
+        assert "raw.githubusercontent.com/dcc-mcp/dcc-mcp-zbrush/main/install.md" in visible
+        assert "Windows" in visible and "macOS" in visible and "Linux" in visible
 
     def test_agents_md_has_mode_table(self) -> None:
         content = self._read_doc("AGENTS.md")
