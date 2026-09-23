@@ -163,9 +163,9 @@ def test_published_core_floor_is_projected_to_all_public_surfaces() -> None:
     floor = ".".join(map(str, MINIMUM_CORE))
 
     assert MINIMUM_CORE == (0, 20, 14)
-    assert f"dcc-mcp-core>={floor},<1.0.0" in (repository / "pyproject.toml").read_text(encoding="utf-8")
-    assert f"dcc-mcp-core >= {floor}" in (repository / "README.md").read_text(encoding="utf-8")
-    assert f"dcc-mcp-core >= {floor}" in (repository / "install.md").read_text(encoding="utf-8")
+    assert f"dcc-mcp-core>={floor},<0.21.0" in (repository / "pyproject.toml").read_text(encoding="utf-8")
+    assert f"dcc-mcp-core >= {floor}, < 0.21.0" in (repository / "README.md").read_text(encoding="utf-8")
+    assert f"dcc-mcp-core >= {floor}, < 0.21.0" in (repository / "install.md").read_text(encoding="utf-8")
 
     skill_paths = sorted((repository / "src" / "dcc_mcp_zbrush" / "skills").glob("*/SKILL.md"))
     assert skill_paths
