@@ -4,7 +4,7 @@
 
 This is the canonical install SOP for `dcc-mcp-zbrush`. ZBrush 2026.1 or
 newer is required. The external sidecar requires Python 3.10 or newer and
-`dcc-mcp-core >= 0.20.14`.
+`dcc-mcp-core >= 0.20.14, < 0.21.0`.
 
 ## Supported versions
 

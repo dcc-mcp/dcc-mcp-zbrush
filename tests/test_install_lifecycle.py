@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-CORE_2320_SCHEMA_SHA256 = "3ca25788439917b4d4c0617230a762f9797756b5b54f45c8c4149f975b90f904"
+# Highest Core release this suite has measured bytes for; kept as a name so the anchor tests
+# stay valid when the adapter extends CORE_SCHEMA_ANCHORS to a newer Core release.
+CORE_ANCHOR_MEASURED_VERSION = "0.20.33"
 
 
 @pytest.fixture(autouse=True)
@@ -59,21 +61,99 @@ def test_exit_codes_match_install_sop_v1() -> None:
     ) == (0, 10, 20, 30, 40, 50)
 
 
-def test_public_install_plan_matches_exact_core_2320_draft_schema(tmp_path: Path) -> None:
+def test_public_install_plan_matches_installed_core_draft_schema(tmp_path: Path) -> None:
     from dcc_mcp_zbrush.install_contract import load_install_sop_schema
     from dcc_mcp_zbrush.install_lifecycle import run_lifecycle
 
-    schema_path = (
-        Path(__file__).parents[1] / "src" / "dcc_mcp_zbrush" / "schemas" / "adapter-install-sop-v1.schema.json"
-    )
-    schema_bytes = schema_path.read_bytes()
-    assert hashlib.sha256(schema_bytes).hexdigest() == CORE_2320_SCHEMA_SHA256
     schema = load_install_sop_schema()
     Draft202012Validator.check_schema(schema)
 
     result = run_lifecycle(replace(_request(tmp_path), yes=False, dry_run=True))
 
     Draft202012Validator(schema).validate(result)
+
+
+def test_bundled_install_schema_is_a_measured_core_revision() -> None:
+    from dcc_mcp_zbrush.install_contract import CORE_SCHEMA_ANCHORS, load_bundled_install_sop_schema
+
+    schema_path = (
+        Path(__file__).parents[1] / "src" / "dcc_mcp_zbrush" / "schemas" / "adapter-install-sop-v1.schema.json"
+    )
+    schema_bytes = schema_path.read_bytes()
+    measured_revisions = {anchor.sha256 for _, anchor in CORE_SCHEMA_ANCHORS}
+
+    assert b"\r\n" not in schema_bytes
+    assert hashlib.sha256(schema_bytes).hexdigest() in measured_revisions
+    Draft202012Validator.check_schema(load_bundled_install_sop_schema())
+
+
+def test_core_schema_anchor_is_keyed_by_the_core_release() -> None:
+    from dcc_mcp_zbrush.install_contract import (
+        CORE_SCHEMA_ANCHOR_MEASURED_THROUGH,
+        core_schema_anchor,
+    )
+    from dcc_mcp_zbrush.install_lifecycle import MINIMUM_CORE
+
+    initial = core_schema_anchor(".".join(map(str, MINIMUM_CORE)))
+    refreshed = core_schema_anchor("0.20.30")
+
+    assert initial is not None and refreshed is not None
+    assert initial.sha256 != refreshed.sha256
+    assert core_schema_anchor("0.20.29") == initial
+    assert core_schema_anchor("0.20.33") == refreshed
+    assert core_schema_anchor(CORE_SCHEMA_ANCHOR_MEASURED_THROUGH) is not None
+    assert core_schema_anchor("0.20.34") is None
+    assert core_schema_anchor("0.20.14rc1") is None
+
+
+def test_core_schema_anchor_requires_a_measurable_core_version() -> None:
+    from dcc_mcp_zbrush.install_contract import core_schema_anchor
+
+    assert core_schema_anchor("") is None
+    assert core_schema_anchor("not-a-version") is None
+
+
+def test_load_install_sop_schema_accepts_an_unmeasured_core_release(monkeypatch: pytest.MonkeyPatch) -> None:
+    import dcc_mcp_zbrush.install_contract as contract
+
+    measured = contract.core_schema_anchor(CORE_ANCHOR_MEASURED_VERSION)
+    assert measured is not None
+    monkeypatch.setattr(contract, "installed_core_version", lambda: "0.20.34")
+    monkeypatch.setattr(contract, "core_schema_anchor", lambda _version: None)
+
+    schema = contract.load_install_sop_schema()
+    report = contract.install_sop_schema_report()
+
+    Draft202012Validator.check_schema(schema)
+    assert report["status"] == "unpinned"
+    assert report["core_version"] == "0.20.34"
+    assert report["sha256"] is None
+    assert (report["observed_size"], report["observed_sha256"]) == (measured.size, measured.sha256)
+
+
+def test_load_install_sop_schema_rejects_drift_from_the_measured_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    import dcc_mcp_zbrush.install_contract as contract
+
+    measured = contract.core_schema_anchor(CORE_ANCHOR_MEASURED_VERSION)
+    assert measured is not None
+    monkeypatch.setattr(contract, "installed_core_version", lambda: CORE_ANCHOR_MEASURED_VERSION)
+    monkeypatch.setattr(contract, "core_schema_anchor", lambda _version: measured._replace(size=measured.size + 1))
+
+    with pytest.raises(RuntimeError, match="does not match the revision measured"):
+        contract.load_install_sop_schema()
+
+
+def test_load_install_sop_schema_rejects_an_unlocatable_core_resource(monkeypatch: pytest.MonkeyPatch) -> None:
+    import dcc_mcp_zbrush.install_contract as contract
+
+    measured = contract.core_schema_anchor(CORE_ANCHOR_MEASURED_VERSION)
+    assert measured is not None
+    monkeypatch.setattr(contract, "installed_core_version", lambda: CORE_ANCHOR_MEASURED_VERSION)
+    monkeypatch.setattr(contract, "core_schema_anchor", lambda _version: measured)
+    monkeypatch.setattr(contract, "_installed_core_schema_identity", lambda _shared: None)
+
+    with pytest.raises(RuntimeError, match="could not be located"):
+        contract.load_install_sop_schema()
 
 
 def test_published_core_floor_is_projected_to_all_public_surfaces() -> None:
@@ -83,9 +163,9 @@ def test_published_core_floor_is_projected_to_all_public_surfaces() -> None:
     floor = ".".join(map(str, MINIMUM_CORE))
 
     assert MINIMUM_CORE == (0, 20, 14)
-    assert f"dcc-mcp-core>={floor},<1.0.0" in (repository / "pyproject.toml").read_text(encoding="utf-8")
-    assert f"dcc-mcp-core >= {floor}" in (repository / "README.md").read_text(encoding="utf-8")
-    assert f"dcc-mcp-core >= {floor}" in (repository / "install.md").read_text(encoding="utf-8")
+    assert f"dcc-mcp-core>={floor},<0.21.0" in (repository / "pyproject.toml").read_text(encoding="utf-8")
+    assert f"dcc-mcp-core >= {floor}, < 0.21.0" in (repository / "README.md").read_text(encoding="utf-8")
+    assert f"dcc-mcp-core >= {floor}, < 0.21.0" in (repository / "install.md").read_text(encoding="utf-8")
 
     skill_paths = sorted((repository / "src" / "dcc_mcp_zbrush" / "skills").glob("*/SKILL.md"))
     assert skill_paths

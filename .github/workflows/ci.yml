@@ -168,7 +168,7 @@ jobs:
         run: /tmp/smoke-venv/bin/python -m pytest tests/test_smoke.py -v --tb=short
 
       - name: Validate canonical lifecycle schema without impersonating ZBrush
-        run: /tmp/smoke-venv/bin/python -m pytest tests/test_install_lifecycle.py::test_public_install_plan_matches_exact_core_2320_draft_schema -v --tb=short
+        run: /tmp/smoke-venv/bin/python -m pytest tests/test_install_lifecycle.py::test_public_install_plan_matches_installed_core_draft_schema -v --tb=short
 
   lifecycle-smoke:
     name: Lifecycle transactions (Windows)

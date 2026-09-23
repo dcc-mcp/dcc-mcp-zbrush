@@ -185,7 +185,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 
 - ZBrush **2026.1+**
 - Python **3.10+** on the sidecar host (ZBrush itself ships 3.11)
-- `dcc-mcp-core >= 0.20.14`
+- `dcc-mcp-core >= 0.20.14, < 0.21.0`
 
 ## Environment variables
 
