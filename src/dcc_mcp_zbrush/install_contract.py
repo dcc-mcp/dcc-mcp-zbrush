@@ -28,7 +28,7 @@ class CoreSchemaAnchor(NamedTuple):
 # Rows whose floor is above `CORE_SCHEMA_ANCHOR_MEASURED_THROUGH` are staged: they are written
 # down as soon as the bytes are known but only go live once a published Core release is measured
 # and `CORE_SCHEMA_ANCHOR_MEASURED_THROUGH` is raised to that release. The `0.20.34` row is the
-# `adapter-install-sop-v2` artifact that Core `main` already carries.
+# `adapter-install-sop-v2` artifact, measured from the published Core `0.20.34` release.
 CORE_SCHEMA_ANCHORS: Tuple[Tuple[Tuple[int, int, int], CoreSchemaAnchor], ...] = (
     ((0, 20, 14), CoreSchemaAnchor(4_261, "3ca25788439917b4d4c0617230a762f9797756b5b54f45c8c4149f975b90f904")),
     ((0, 20, 30), CoreSchemaAnchor(4_899, "2b3a8a101384a5163c7569c4a2b0de6586c672c5ee291735f94334a33b7d37a0")),
@@ -38,7 +38,7 @@ CORE_SCHEMA_ANCHORS: Tuple[Tuple[Tuple[int, int, int], CoreSchemaAnchor], ...] =
 # Highest Core release whose schema bytes were measured into CORE_SCHEMA_ANCHORS. A newer Core
 # release verifies without a pinned digest instead of failing, so a Core release can never
 # strand an installed adapter; add its row above (and raise this floor) once it is measured.
-CORE_SCHEMA_ANCHOR_MEASURED_THROUGH = "0.20.33"
+CORE_SCHEMA_ANCHOR_MEASURED_THROUGH = "0.20.34"
 
 
 def version_tuple(value: str) -> Optional[Tuple[int, int, int]]:
