@@ -14,7 +14,29 @@ from jsonschema import Draft202012Validator
 
 # Highest Core release this suite has measured bytes for; kept as a name so the anchor tests
 # stay valid when the adapter extends CORE_SCHEMA_ANCHORS to a newer Core release.
-CORE_ANCHOR_MEASURED_VERSION = "0.20.33"
+CORE_ANCHOR_MEASURED_VERSION = "0.20.34"
+
+# A Core release above CORE_ANCHOR_MEASURED_VERSION: it has no measured row, so the anchor
+# accepts whatever bytes Core ships for it. Kept as a name so the forward-compatible path is
+# exercised against a version that is unmeasured by construction rather than by convention.
+UNMEASURED_CORE_VERSION = "0.20.35"
+
+
+def _installed_core_schema_identities() -> set[tuple[int, str]]:
+    """Byte identities of every Install SOP schema artifact the *installed* Core ships.
+
+    Measured from the installed distribution rather than from a pinned row, so an assertion
+    about the observed bytes holds whichever Core release CI happens to resolve.
+    """
+    from importlib.resources import files
+
+    schemas = files("dcc_mcp_core").joinpath("schemas")
+    identities: set[tuple[int, str]] = set()
+    for child in sorted(schemas.iterdir()):
+        if child.name.startswith("adapter-install-sop-v") and child.name.endswith(".schema.json"):
+            raw = child.read_bytes()
+            identities.add((len(raw), hashlib.sha256(raw).hexdigest()))
+    return identities
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +124,9 @@ def test_core_schema_anchor_is_keyed_by_the_core_release() -> None:
     assert core_schema_anchor("0.20.29") == initial
     assert core_schema_anchor("0.20.33") == refreshed
     assert core_schema_anchor(CORE_SCHEMA_ANCHOR_MEASURED_THROUGH) is not None
-    assert core_schema_anchor("0.20.34") is None
+    assert core_schema_anchor("0.20.34") == core_schema_anchor(CORE_ANCHOR_MEASURED_VERSION)
+    assert core_schema_anchor("0.20.34").sha256 != refreshed.sha256
+    assert core_schema_anchor(UNMEASURED_CORE_VERSION) is None
     assert core_schema_anchor("0.20.14rc1") is None
 
 
@@ -116,9 +140,7 @@ def test_core_schema_anchor_requires_a_measurable_core_version() -> None:
 def test_load_install_sop_schema_accepts_an_unmeasured_core_release(monkeypatch: pytest.MonkeyPatch) -> None:
     import dcc_mcp_zbrush.install_contract as contract
 
-    measured = contract.core_schema_anchor(CORE_ANCHOR_MEASURED_VERSION)
-    assert measured is not None
-    monkeypatch.setattr(contract, "installed_core_version", lambda: "0.20.34")
+    monkeypatch.setattr(contract, "installed_core_version", lambda: UNMEASURED_CORE_VERSION)
     monkeypatch.setattr(contract, "core_schema_anchor", lambda _version: None)
 
     schema = contract.load_install_sop_schema()
@@ -126,9 +148,42 @@ def test_load_install_sop_schema_accepts_an_unmeasured_core_release(monkeypatch:
 
     Draft202012Validator.check_schema(schema)
     assert report["status"] == "unpinned"
-    assert report["core_version"] == "0.20.34"
+    assert report["core_version"] == UNMEASURED_CORE_VERSION
     assert report["sha256"] is None
-    assert (report["observed_size"], report["observed_sha256"]) == (measured.size, measured.sha256)
+    # No pinned digest, but the diagnosis must still report real bytes from the installed Core.
+    # Compare against the installed distribution rather than a pinned row so this does not break
+    # the next time Core republishes the artifact.
+    assert report["observed_size"] is not None
+    assert report["observed_sha256"] is not None
+    assert (report["observed_size"], report["observed_sha256"]) in _installed_core_schema_identities()
+
+
+def test_core_0_20_34_schema_revision_is_pinned_and_verified(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 0.20.34 row is live, not staged: its v2 bytes are enforced, not merely accepted."""
+    import dcc_mcp_zbrush.install_contract as contract
+
+    pinned = contract.core_schema_anchor("0.20.34")
+    assert pinned is not None
+    assert pinned.sha256 != contract.core_schema_anchor("0.20.33").sha256
+
+    monkeypatch.setattr(contract, "installed_core_version", lambda: "0.20.34")
+    monkeypatch.setattr(contract, "_installed_core_schema_identity", lambda _shared: pinned)
+
+    schema = contract.load_install_sop_schema()
+    report = contract.install_sop_schema_report()
+
+    Draft202012Validator.check_schema(schema)
+    assert report["status"] == "pinned"
+    assert report["core_version"] == "0.20.34"
+    assert report["sha256"] == pinned.sha256
+
+    monkeypatch.setattr(
+        contract,
+        "_installed_core_schema_identity",
+        lambda _shared: pinned._replace(size=pinned.size + 1),
+    )
+    with pytest.raises(RuntimeError, match="does not match the revision measured"):
+        contract.load_install_sop_schema()
 
 
 def test_load_install_sop_schema_rejects_drift_from_the_measured_revision(monkeypatch: pytest.MonkeyPatch) -> None:
