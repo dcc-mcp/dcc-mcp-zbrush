@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.27](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.26...v0.2.27) (2026-09-25)
+
+
+### Bug Fixes
+
+* **ci:** install package in editable mode before release tests ([ae437b2](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/ae437b2213792a37f2fd9ca78a09db6f5c58e7da))
+* pin the Core Install SOP schema per Core release ([#73](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/73)) ([ffc059c](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/ffc059c1da35cd5078b0c6da66782dc6523ce966))
+* raise the Core Install SOP schema anchor floor to 0.20.34 ([c14a275](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/c14a275d71a65b532c87bc4b8b91fea1da708e1b))
+
 ## [0.2.26](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.25...v0.2.26) (2026-08-26)
 
 
