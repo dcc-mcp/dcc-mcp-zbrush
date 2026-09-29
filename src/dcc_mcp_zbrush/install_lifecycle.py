@@ -210,13 +210,20 @@ def _parse_version(value: str, *, stage: str, components: int = 3) -> tuple[int,
     return values
 
 
+_HOST_VERSION_SEPARATORS = re.compile(r"[.,]\s*")
+
+
 def _parse_host_version(value: str, *, stage: str = "host") -> tuple[int, ...]:
     if not isinstance(value, str) or len(value) > 64:
         raise LifecycleFailure(EXIT_PREFLIGHT, stage, "ZBrush product version is not bounded")
     component = r"(?:0|[1-9]\d{0,5})"
-    if re.fullmatch(rf"{component}(?:\.{component}){{1,3}}", value) is None:
+    # Windows version resources may report the product version with comma separators
+    # (for example "2026, 2, 1, 1"); normalise the separators only, so a bounded canonical
+    # shape, the component length cap and the component range stay enforced as before.
+    canonical = _HOST_VERSION_SEPARATORS.sub(".", value.strip()).strip()
+    if re.fullmatch(rf"{component}(?:\.{component}){{1,3}}", canonical) is None:
         raise LifecycleFailure(EXIT_PREFLIGHT, stage, f"ZBrush product version is not canonical: {value}")
-    parts = tuple(int(part) for part in value.split("."))
+    parts = tuple(int(part) for part in canonical.split("."))
     if any(part > 999_999 for part in parts):
         raise LifecycleFailure(EXIT_PREFLIGHT, stage, "ZBrush product version component is out of range")
     return parts
@@ -552,16 +559,40 @@ def _same_path(left: Path | str, right: Path | str) -> bool:
     return os.path.normcase(str(Path(left).resolve())) == os.path.normcase(str(Path(right).resolve()))
 
 
+NATIVE_ZBRUSH_MODULE_NAMES = frozenset({"commands.pyd", "commands.so", "commands.dylib"})
+
+
 def _zbrush_module_provenance(receipt: Mapping[str, Any], origin_text: str) -> tuple[Path, str]:
+    if not str(origin_text or "").strip():
+        raise LifecycleFailure(EXIT_VERIFY, "host_identity", "zbrush.commands reports no module origin")
     dcc_root = Path(str(receipt.get("dcc_root") or "")).resolve()
+    selected_executable = Path(str(receipt.get("dcc_path") or "")).resolve()
     origin = Path(origin_text).resolve()
-    if (
-        not origin.is_file()
-        or not origin.is_relative_to(dcc_root)
-        or origin.parent.name.casefold() != "zbrush"
-        or origin.name.casefold() not in {"commands.pyd", "commands.so", "commands.dylib"}
-    ):
+    is_native_module = (
+        origin.is_file()
+        and origin.is_relative_to(dcc_root)
+        and origin.parent.name.casefold() == "zbrush"
+        and origin.name.casefold() in NATIVE_ZBRUSH_MODULE_NAMES
+    )
+    # ZBrush 2026.2+ builds zbrush.commands into the signed host executable, so the module
+    # reports the selected product root (or the host executable itself) as its origin instead
+    # of a sibling native module. Such an origin is bound to the selected product root only:
+    # the embedded module cannot be separated from that binary, so the "module belongs to the
+    # selected, signature-verified product" invariant still holds.
+    is_embedded_module = origin.is_dir() and _same_path(origin, dcc_root)
+    if not is_embedded_module:
+        is_embedded_module = origin.is_file() and _same_path(origin, selected_executable)
+    if not is_native_module and not is_embedded_module:
         raise LifecycleFailure(EXIT_VERIFY, "host_identity", "zbrush.commands is not a native selected-product module")
+    if is_embedded_module:
+        # The module lives inside the selected product binary, whose bytes are covered by the
+        # preflight digest and re-checked against the running process by the caller.
+        embedded_digest = str(receipt.get("dcc_sha256") or "")
+        if re.fullmatch(r"[0-9a-f]{64}", embedded_digest) is None:
+            raise LifecycleFailure(
+                EXIT_VERIFY, "host_identity", "zbrush.commands provenance has no selected-product digest"
+            )
+        return origin, embedded_digest
     try:
         digest = _sha256_file(origin)
     except OSError as exc:
