@@ -8,6 +8,7 @@ import sys
 import zipfile
 from dataclasses import replace
 from pathlib import Path
+from typing import Optional
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -352,11 +353,13 @@ def _commit_sidecar(
     return receipt, session
 
 
-def _embedded_readiness(request, receipt: dict) -> dict:
+def _embedded_readiness(request, receipt: dict, *, origin: Optional[Path] = None) -> dict:
     adapter_path = request.asset_dir / "dcc_mcp_zbrush" / "__init__.py"
-    zbrush_origin = Path(receipt["dcc_root"]) / "Python" / "zbrush" / "commands.pyd"
-    zbrush_origin.parent.mkdir(parents=True, exist_ok=True)
-    zbrush_origin.write_bytes(b"native-zbrush-sdk")
+    zbrush_origin = origin
+    if zbrush_origin is None:
+        zbrush_origin = Path(receipt["dcc_root"]) / "Python" / "zbrush" / "commands.pyd"
+        zbrush_origin.parent.mkdir(parents=True, exist_ok=True)
+        zbrush_origin.write_bytes(b"native-zbrush-sdk")
     instance_id = "22222222-2222-2222-2222-222222222222"
     mcp_url = "http://127.0.0.1:45678/mcp"
     session = {
@@ -1549,3 +1552,188 @@ def test_different_selected_python_fails_with_exact_executable_remediation(tmp_p
     assert command[:4] == [str(selected_python), "-m", "dcc_mcp_zbrush.cli", "install"]
     assert "--dcc-path" in command and str(request.dcc_path) in command
     assert "--asset-dir" in command and str(request.asset_dir) in command
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026, 2, 1, 1", (2026, 2, 1, 1)),
+        ("2026,2,1,1", (2026, 2, 1, 1)),
+        ("2026.2.1.1", (2026, 2, 1, 1)),
+        ("2026.2.1", (2026, 2, 1)),
+        ("2026.2", (2026, 2)),
+        ("0.0", (0, 0)),
+    ],
+)
+def test_host_version_accepts_windows_comma_separated_product_versions(value: str, expected: tuple) -> None:
+    from dcc_mcp_zbrush.install_lifecycle import _parse_host_version
+
+    assert _parse_host_version(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "   ",
+        "2026",
+        "2026.2.1.1.5",
+        "2026..2",
+        ".2026.2",
+        "2026.2.",
+        "2026.2.1-beta",
+        "2026, 2, 1,",
+        "2026 2 1 1",
+        "2026.2.1rc1",
+        "1." + "9" * 63,
+    ],
+)
+def test_host_version_rejects_non_canonical_shapes_after_separator_normalisation(value: str) -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    with pytest.raises(lifecycle.LifecycleFailure) as raised:
+        lifecycle._parse_host_version(value)
+
+    assert raised.value.exit_code == 10
+    assert raised.value.stage == "host"
+
+
+def test_host_version_rejects_unbounded_values_before_normalisation() -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    with pytest.raises(lifecycle.LifecycleFailure, match="not bounded"):
+        lifecycle._parse_host_version("2, " * 40)
+
+
+def test_preflight_accepts_comma_separated_windows_product_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    monkeypatch.setattr(
+        lifecycle,
+        "_windows_product_info",
+        lambda _path: {"product_name": "Maxon ZBrush", "version": "2026, 2, 1, 1"},
+    )
+
+    result = lifecycle.run_lifecycle(replace(_request(tmp_path), yes=False, dry_run=True))
+
+    assert result["exit_code"] == 0
+    assert result["detected"]["zbrush_version"] == "2026, 2, 1, 1"
+
+
+def _verify_sidecar_with_origin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    origin,
+):
+    """Install the sidecar, then verify against a chosen zbrush.commands origin."""
+
+    from dcc_mcp_zbrush.install_lifecycle import run_lifecycle
+
+    request = _request(tmp_path)
+    archive = tmp_path / "plugin.zip"
+    digest = _build_sidecar_archive(archive)
+    receipt, session = _pending_sidecar(request, archive, digest)
+    session["zbrush_commands_origin"] = str(origin(receipt, tmp_path))
+    _bind_sidecar(monkeypatch, request, session)
+    result = run_lifecycle(replace(request, operation="verify"))
+    receipt_path = request.asset_dir / ".dcc-mcp" / "receipts" / "zbrush.json"
+    stored = json.loads(receipt_path.read_text(encoding="utf-8")) if receipt_path.exists() else {}
+    return receipt, stored, result
+
+
+def test_embedded_zbrush_commands_product_root_origin_passes_sidecar_host_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ZBrush 2026.2+ builds zbrush.commands into the host executable and reports the signed
+    # product root as the module origin instead of a sibling native module.
+    receipt, stored, result = _verify_sidecar_with_origin(tmp_path, monkeypatch, lambda r, _t: Path(r["dcc_root"]))
+
+    assert result["exit_code"] == 0
+    assert result["directly_usable"] is True
+    assert stored["runtime_identity"]["zbrush_commands_origin"] == str(Path(receipt["dcc_root"]).resolve())
+    assert stored["runtime_identity"]["zbrush_commands_sha256"] == receipt["dcc_sha256"]
+
+
+def test_embedded_zbrush_commands_host_executable_origin_passes_sidecar_host_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt, stored, result = _verify_sidecar_with_origin(tmp_path, monkeypatch, lambda r, _t: Path(r["dcc_path"]))
+
+    assert result["exit_code"] == 0
+    assert result["directly_usable"] is True
+    assert stored["runtime_identity"]["zbrush_commands_sha256"] == receipt["dcc_sha256"]
+
+
+def test_embedded_zbrush_commands_product_root_origin_passes_embedded_host_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dcc_mcp_core.install_lifecycle as core_lifecycle
+
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    request = replace(_request(tmp_path), mode="embedded")
+    archive = tmp_path / "embedded.zip"
+    with zipfile.ZipFile(archive, "w") as payload:
+        payload.writestr("embedded/dcc_mcp_zbrush/__init__.py", "PLUGIN = True\n")
+        payload.writestr("embedded/dcc_mcp_zbrush_plugin.py", "PLUGIN_ENTRY = True\n")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert lifecycle.run_lifecycle(request, plugin_archive=archive, expected_sha256=digest)["exit_code"] == 50
+    receipt_path = request.asset_dir / ".dcc-mcp" / "receipts" / "zbrush.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    readiness = _embedded_readiness(request, receipt, origin=Path(receipt["dcc_root"]))
+    monkeypatch.setattr(core_lifecycle, "wait_for_sidecar_ready", lambda **_kwargs: readiness)
+    monkeypatch.setattr(lifecycle, "_process_executable", lambda _pid: Path(request.dcc_path))
+    monkeypatch.setattr(lifecycle, "_process_start_identity", lambda _pid: "start-5252")
+
+    result = lifecycle.run_lifecycle(replace(request, operation="verify"))
+
+    assert result["exit_code"] == 0
+    stored = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert stored["runtime_identity"]["zbrush_commands_origin"] == str(Path(receipt["dcc_root"]).resolve())
+    assert stored["runtime_identity"]["zbrush_commands_sha256"] == receipt["dcc_sha256"]
+
+
+def _write_file(path: Path, data: bytes = b"payload") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return path
+
+
+@pytest.mark.parametrize(
+    "origin_name",
+    [
+        "foreign-native-module",
+        "foreign-product-root",
+        "product-subdirectory",
+        "sibling-product-executable",
+        "wrong-native-module-name",
+        "wrong-native-module-parent",
+        "missing-origin",
+    ],
+)
+def test_zbrush_commands_origin_outside_the_selected_product_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin_name: str
+) -> None:
+    def resolve(receipt: dict, root: Path) -> Path | str:
+        product_root = Path(receipt["dcc_root"])
+        foreign = root / "Rogue ZBrush"
+        origins = {
+            "foreign-native-module": _write_file(foreign / "Python" / "zbrush" / "commands.pyd"),
+            "foreign-product-root": foreign,
+            "product-subdirectory": product_root / "Python",
+            "sibling-product-executable": _write_file(product_root / "ZBrushHelper.exe"),
+            "wrong-native-module-name": _write_file(product_root / "Python" / "zbrush" / "commands.dll"),
+            "wrong-native-module-parent": _write_file(product_root / "Python" / "notzbrush" / "commands.pyd"),
+            "missing-origin": "",
+        }
+        origins["foreign-product-root"].mkdir(parents=True, exist_ok=True)
+        origins["product-subdirectory"].mkdir(parents=True, exist_ok=True)
+        return origins[origin_name]
+
+    _receipt, _stored, result = _verify_sidecar_with_origin(tmp_path, monkeypatch, resolve)
+
+    assert result["exit_code"] == 40
+    assert result["stage"] == "host_identity"
+    assert result["directly_usable"] is False
