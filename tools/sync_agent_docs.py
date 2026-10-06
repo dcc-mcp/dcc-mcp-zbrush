@@ -139,7 +139,6 @@ def _generate_agents_md(data: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-
 def _generate_llms_txt(data: dict) -> str:
     p = data["project"]
     lines = [
