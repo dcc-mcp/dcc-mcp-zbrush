@@ -788,7 +788,7 @@ class TestDocsDrift:
 
     # --- MCP endpoint assertions ---
 
-    @pytest.mark.parametrize("doc_file", ["README.md", "llms.txt", "AGENTS.md", ".claude/CLAUDE.md"])
+    @pytest.mark.parametrize("doc_file", ["README.md", "llms.txt", "AGENTS.md"])
     def test_mcp_endpoint_in_doc(self, doc_file: str) -> None:
         content = self._read_doc(doc_file)
         assert "/mcp" in content, f"Endpoint /mcp not found in {doc_file}"
@@ -928,7 +928,6 @@ Visible after
             "pyproject.toml": ('Installation = "https://github.com/dcc-mcp/dcc-mcp-zbrush/blob/main/install.md"',),
             "docs/agent-docs.yaml": (self._CANONICAL_INSTALL_RAW_URL,),
             "AGENTS.md": (self._CANONICAL_INSTALL_RAW_URL,),
-            ".claude/CLAUDE.md": (self._CANONICAL_INSTALL_RAW_URL,),
             "llms.txt": (self._CANONICAL_INSTALL_RAW_URL,),
             "tools/pack_plugin.py": (self._CANONICAL_INSTALL_RAW_URL,),
         }

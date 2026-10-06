@@ -1,4 +1,4 @@
-"""Synchronise AGENTS.md, .claude/CLAUDE.md, and llms.txt from docs/agent-docs.yaml.
+"""Synchronise AGENTS.md and llms.txt from docs/agent-docs.yaml.
 
 Usage:
     python tools/sync_agent_docs.py          # write all three files
@@ -17,7 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE = REPO_ROOT / "docs" / "agent-docs.yaml"
 OUTPUTS = {
     "AGENTS.md": REPO_ROOT / "AGENTS.md",
-    ".claude/CLAUDE.md": REPO_ROOT / ".claude" / "CLAUDE.md",
     "llms.txt": REPO_ROOT / "llms.txt",
 }
 
@@ -134,90 +133,6 @@ def _generate_agents_md(data: dict) -> str:
     )
 
     lines.extend(["## External docs", ""])
-    for doc in data["external_docs"]:
-        lines.append(f"- {doc['label']}: {doc['url']}")
-
-    return "\n".join(lines) + "\n"
-
-
-def _generate_claude_md(data: dict) -> str:
-    p = data["project"]
-    t = data["target_host"]
-    lines = [
-        f"# CLAUDE.md — {p['name']} (Claude Code entry)",
-        "",
-        "> Claude-specific entry point. Full navigation map: `AGENTS.md`.",
-        "",
-        "## Quick facts",
-        "",
-    ]
-    lines.append(f"- **Target host:** {t['software']} **{t['version']}** with embedded Python SDK (`{t['sdk']}`)")
-    lines.append("- **Primary mode:** sidecar MCP process + main-thread `bridge/plugin/mcp_socket_bridge.py`")
-    lines.append(f"- **Advanced mode:** pure-Python embedded experiments inside {t['software']}")
-    for note in data["do_not_assume"]:
-        lines.append(f"- **Do not assume:** {note}")
-
-    lines.extend(
-        [
-            "",
-            "## Cursor / Claude Desktop MCP config",
-            "",
-            "```json",
-            "{",
-            '  "mcpServers": {',
-            f'    "{p["name"]}": {{',
-            f'      "url": "{data["mcp_config"]["direct"]["url"]}"',
-            "    }",
-            "  }",
-            "}",
-            "```",
-            "",
-            "With gateway (multi-DCC):",
-            "",
-            "```json",
-            "{",
-            '  "mcpServers": {',
-            f'    "{p["name"]}": {{',
-            f'      "url": "{data["mcp_config"]["gateway"]["url"]}"',
-            "    }",
-            "  }",
-            "}",
-            "```",
-        ]
-    )
-
-    lines.extend(
-        [
-            "",
-            "## Skills-first workflow",
-            "",
-            "```",
-        ]
-    )
-    for step in data["skills_workflow"]["steps"]:
-        lines.append(f"{step}")
-    lines.append("```")
-    lines.append("")
-    lines.append(f"Default minimal loads {', '.join(data['skills_workflow']['default_minimal'])}.")
-    lines.append("")
-
-    lines.extend(
-        [
-            "## Key files",
-            "",
-            _fmt_table(
-                ["Path", "Role"],
-                [[kf["path"], kf["role"]] for kf in data["key_files"]],
-            ),
-            "",
-        ]
-    )
-
-    lines.extend(["## ZBrush Python VM constraints", ""])
-    for c in data["zbrush_vm_constraints"]:
-        lines.append(f"- {c}")
-
-    lines.extend(["", "## External docs", ""])
     for doc in data["external_docs"]:
         lines.append(f"- {doc['label']}: {doc['url']}")
 
@@ -377,7 +292,6 @@ def _check_drift(data: dict, key: str, path: Path) -> bool:
 
 GENERATORS: dict[str, callable] = {
     "AGENTS.md": _generate_agents_md,
-    ".claude/CLAUDE.md": _generate_claude_md,
     "llms.txt": _generate_llms_txt,
 }
 

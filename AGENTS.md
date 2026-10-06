@@ -76,7 +76,6 @@ Default minimal mode loads zbrush-scripting, zbrush-scene.
 |File|Role|
 |---|---|
 |llms.txt|Minimal agent entry (modes, install, health check, failure modes)|
-|.claude/CLAUDE.md|Claude-specific entry referencing AGENTS.md|
 
 ## External docs
 
