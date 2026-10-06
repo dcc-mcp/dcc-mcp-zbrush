@@ -16,20 +16,14 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Multica local runtime context. The daemon may write these into a bound
-# local_directory, but they must not be committed.
-.agent_context/
-.multica/
-
-# Local AI-agent / IDE directories.
-#
-# These are mount points for agent runtimes, not source. Anything that has to be
-# shared is generated from a committed source instead - AGENTS.md, llms.txt and
-# .claude/CLAUDE.md are all produced from docs/agent-docs.yaml by
-# tools/sync_agent_docs.py, so only the yaml is committed. Patterns are anchored
-# with a leading "/" so only the repository root matches; unanchored patterns
-# would silently ignore a nested directory of the same name.
+# Local agent / IDE directories. These are runtime mount points, not source:
+# the skills and context that actually get loaded are mounted per run from
+# an organization-level skill registry, so a copy kept in the repository only
+# lets the two drift.
+# Patterns are anchored with a leading "/" so only the repository root matches;
+# unanchored patterns would silently ignore a nested directory of the same name.
 /.agents/
+/.agent_context/
 /.aider/
 /.augment/
 /.beads/
@@ -45,6 +39,7 @@ Thumbs.db
 /.kimi/
 /.kiro/
 /.monica/
+/.multica/
 /.opencode/
 /.roo/
 /.serena/
