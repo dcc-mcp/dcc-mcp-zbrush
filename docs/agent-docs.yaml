@@ -1,6 +1,6 @@
 # Single source of truth for dcc-mcp-zbrush agent documentation.
 # Edit this file, then run `python tools/sync_agent_docs.py` to regenerate:
-#   AGENTS.md, .claude/CLAUDE.md, llms.txt
+#   AGENTS.md, llms.txt
 
 project:
   name: dcc-mcp-zbrush
@@ -107,8 +107,6 @@ key_files:
 agent_entry_points:
   - file: llms.txt
     role: "Minimal agent entry (modes, install, health check, failure modes)"
-  - file: .claude/CLAUDE.md
-    role: "Claude-specific entry referencing AGENTS.md"
 
 zbrush_vm_constraints:
   - "Persistent interpreter shared across scripts"
