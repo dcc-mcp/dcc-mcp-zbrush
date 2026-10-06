@@ -20,3 +20,33 @@ Thumbs.db
 # local_directory, but they must not be committed.
 .agent_context/
 .multica/
+
+# Local AI-agent / IDE directories.
+#
+# These are mount points for agent runtimes, not source. Anything that has to be
+# shared is generated from a committed source instead - AGENTS.md, llms.txt and
+# .claude/CLAUDE.md are all produced from docs/agent-docs.yaml by
+# tools/sync_agent_docs.py, so only the yaml is committed. Patterns are anchored
+# with a leading "/" so only the repository root matches; unanchored patterns
+# would silently ignore a nested directory of the same name.
+/.agents/
+/.aider/
+/.augment/
+/.beads/
+/.claude/
+/.cline/
+/.clinerules/
+/.codebuddy/
+/.codegraph/
+/.codex/
+/.continue/
+/.cursor/
+/.gemini/
+/.kimi/
+/.kiro/
+/.monica/
+/.opencode/
+/.roo/
+/.serena/
+/.trae/
+/.windsurf/
