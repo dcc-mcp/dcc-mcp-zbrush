@@ -862,11 +862,51 @@ def _serve_client(conn: socket.socket) -> None:
         conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
 
 
+def _expired_response(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": payload.get("id", 0),
+        "error": {
+            "code": -32004,
+            "message": "ZBrush request expired before execution; no host operation was started",
+            "data": {"retryable": True, "executed": False, "active_method": payload.get("method")},
+        },
+    }
+
+
 def _dispatch_request(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Queue host API work for the ZBrush main thread and await its response."""
+    """Queue host work with a deadline; never start a request after it expires."""
     global _ACTIVE_REQUEST
 
-    pending: Dict[str, Any] = {"payload": payload, "event": threading.Event()}
+    # The sidecar and plugin normally share a machine (and wall clock). Carry
+    # expiry across the TCP accept backlog, then use monotonic time locally.
+    remaining = _REQUEST_TIMEOUT_SECONDS
+    wire_deadline = payload.get("deadline_unix_ms")
+    if wire_deadline is not None:
+        try:
+            valid_deadline = (
+                not isinstance(wire_deadline, bool)
+                and isinstance(wire_deadline, (int, float))
+                and math.isfinite(wire_deadline)
+            )
+        except OverflowError:
+            valid_deadline = False
+        if not valid_deadline:
+            return {
+                "jsonrpc": "2.0",
+                "id": payload.get("id", 0),
+                "error": {"code": -32602, "message": "deadline_unix_ms must be a finite number"},
+            }
+        remaining = min(remaining, wire_deadline / 1000.0 - time.time())
+    if remaining <= 0:
+        return _expired_response(payload)
+
+    pending: Dict[str, Any] = {
+        "payload": payload,
+        "event": threading.Event(),
+        "deadline": time.monotonic() + remaining,
+        "state": "queued",
+    }
     with _REQUEST_STATE_LOCK:
         if _ACTIVE_REQUEST is not None:
             active_method = _ACTIVE_REQUEST["payload"].get("method")
@@ -879,23 +919,41 @@ def _dispatch_request(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "data": {"retryable": True, "active_method": active_method},
                 },
             }
+        # With no active request, any old queue entries are cancelled. Drop
+        # their tombstones so repeated timeouts cannot grow an unbounded queue.
+        while True:
+            try:
+                _REQUEST_QUEUE.get_nowait()
+            except queue.Empty:
+                break
         _ACTIVE_REQUEST = pending
-    _REQUEST_QUEUE.put(pending)
-    if not pending["event"].wait(_REQUEST_TIMEOUT_SECONDS):
-        return {
-            "jsonrpc": "2.0",
-            "id": payload.get("id", 0),
-            "error": {
-                "code": -32002,
-                "message": "Timed out waiting for ZBrush; the accepted request may still be running",
-                "data": {"retryable": False, "still_running": True, "active_method": payload.get("method")},
-            },
-        }
-    return pending["response"]
+        _REQUEST_QUEUE.put(pending)
+    if pending["event"].wait(max(0.0, pending["deadline"] - time.monotonic())):
+        return pending["response"]
+    with _REQUEST_STATE_LOCK:
+        if pending["state"] in ("finished", "cancelled"):
+            return pending["response"]
+        if pending["state"] == "queued":
+            pending["state"] = "cancelled"
+            pending["response"] = _expired_response(payload)
+            if _ACTIVE_REQUEST is pending:
+                _ACTIVE_REQUEST = None
+            pending["event"].set()
+            return pending["response"]
+    # Once native code has started, a timeout cannot cancel or roll it back.
+    return {
+        "jsonrpc": "2.0",
+        "id": payload.get("id", 0),
+        "error": {
+            "code": -32002,
+            "message": "Timed out waiting for ZBrush; the accepted request may still be running",
+            "data": {"retryable": False, "still_running": True, "active_method": payload.get("method")},
+        },
+    }
 
 
 def _drain_request_queue() -> None:
-    """Run queued ZBrush SDK calls from the host's main-thread pump."""
+    """Run unexpired queued SDK calls from the host's main-thread pump."""
     global _ACTIVE_REQUEST
 
     while True:
@@ -903,13 +961,37 @@ def _drain_request_queue() -> None:
             pending = _REQUEST_QUEUE.get_nowait()
         except queue.Empty:
             return
+        with _REQUEST_STATE_LOCK:
+            if pending["state"] == "cancelled" or time.monotonic() >= pending["deadline"]:
+                pending["state"] = "cancelled"
+                pending["response"] = _expired_response(pending["payload"])
+                if _ACTIVE_REQUEST is pending:
+                    _ACTIVE_REQUEST = None
+                pending["event"].set()
+                continue
+            pending["state"] = "started"
+        response = {
+            "jsonrpc": "2.0",
+            "id": pending["payload"].get("id", 0),
+            "error": {
+                "code": -32002,
+                "message": "ZBrush request aborted after starting; inspect the scene before retrying",
+                "data": {"retryable": False, "execution_state": "unknown"},
+            },
+        }
         try:
-            pending["response"] = _handle_request(pending["payload"])
+            response = _handle_request(pending["payload"])
+        except Exception as exc:
+            response["error"]["message"] = f"ZBrush request failed after starting: {exc}"
         finally:
+            # Also release waiters if user code raises SystemExit/KeyboardInterrupt.
+            # Preserve the exception for the host, but never strand admission busy.
             with _REQUEST_STATE_LOCK:
                 if _ACTIVE_REQUEST is pending:
                     _ACTIVE_REQUEST = None
-            pending["event"].set()
+                pending["response"] = response
+                pending["state"] = "finished"
+                pending["event"].set()
 
 
 def _serve_forever(host: str, port: int) -> None:

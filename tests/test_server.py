@@ -97,7 +97,7 @@ def test_socket_bridge_ping(monkeypatch):
 
     bridge = SocketBridge(host="127.0.0.1", port=9876)
 
-    def fake_send(data: bytes) -> bytes:
+    def fake_send(data: bytes, **_kwargs) -> bytes:
         payload = json.loads(data.decode("utf-8"))
         assert payload["method"] == "ping"
         return json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}).encode("utf-8")
@@ -108,13 +108,13 @@ def test_socket_bridge_ping(monkeypatch):
 
 
 def test_socket_bridge_transport_failure_clears_connection(monkeypatch):
-    from dcc_mcp_zbrush.bridge import SocketBridge
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
 
     bridge = SocketBridge(host="127.0.0.1", port=9876)
     bridge._connected = True
     monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionError("gone")))
 
-    with pytest.raises(ConnectionError, match="gone"):
+    with pytest.raises(ZBrushBridgeError, match="unavailable"):
         bridge.call("get_session_info")
 
     assert bridge.is_connected() is False
@@ -135,7 +135,7 @@ def test_bridge_busy_error_remains_retryable_at_tool_boundary(monkeypatch):
             "data": {"retryable": True, "active_method": "execute_python"},
         },
     }
-    monkeypatch.setattr(bridge, "_send", lambda _data: json.dumps(response).encode("utf-8"))
+    monkeypatch.setattr(bridge, "_send", lambda _data, **_kwargs: json.dumps(response).encode("utf-8"))
 
     with pytest.raises(ZBrushBridgeError) as caught:
         bridge.call("get_scene_info")

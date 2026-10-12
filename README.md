@@ -173,14 +173,20 @@ in the external sidecar process; importing its extension module into the ZBrush
 2026 embedded VM is not a supported runtime path. The ZBrush-facing bridge is
 Python only and executes requests serially on the host main thread while
 pumping UI updates between requests. Only one SDK request is admitted at a
-time; additional requests fail with a retryable busy response, and `ping`
-remains available without touching the SDK. A long native operation can still
+time; additional requests fail with a retryable busy response. `ping` does not
+touch the SDK, but cannot respond if a native operation holds Python's GIL.
+A long native operation can still
 make Windows report ZBrush as not responding because the Maxon SDK call itself
 is synchronous. If a bridge timeout says the request is still running, do not
-retry the mutation; poll bridge health until `busy` becomes false. File import,
+retry the mutation automatically; inspect the scene after bridge health recovers.
+File import,
 export, and baking suppress scripted action feedback without wrapping the
 native operation in `zbc.freeze()`, so ZBrush can still present progress or a
 required native dialog.
+
+For blocked dialogs, short health probes, and queue-expiry limits, see
+[Blocked bridge safeguards](docs/blocked-bridge.md). These safeguards do not
+propagate an earlier MCP/REST timeout or make `/v1/readyz` a host-execution proof.
 
 GoZ C++ SDK is for **mesh exchange between DCC apps**, not general MCP automation — we do not build the primary adapter on GoZ.
 
