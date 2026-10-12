@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,13 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9876
 DEFAULT_TIMEOUT_SEC = 610.0
 PING_TIMEOUT_SEC = 3.0
+
+# Busy retries. ZBrush services one SDK request at a time, so a concurrent call
+# is refused rather than failed. Waiting it out is what makes the -32001
+# "retryable" marker true; without this the marker is only a promise.
+DEFAULT_BUSY_RETRIES = 3
+DEFAULT_BUSY_BACKOFF_SEC = 0.25
+DEFAULT_BUSY_BACKOFF_MAX_SEC = 2.0
 
 STATUS_READY = "ready"
 STATUS_BUSY = "busy"
@@ -74,10 +82,16 @@ class SocketBridge:
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
         timeout: float = DEFAULT_TIMEOUT_SEC,
+        busy_retries: int = DEFAULT_BUSY_RETRIES,
+        busy_backoff_sec: float = DEFAULT_BUSY_BACKOFF_SEC,
+        busy_backoff_max_sec: float = DEFAULT_BUSY_BACKOFF_MAX_SEC,
     ) -> None:
         self._host = host
         self._port = port
         self._timeout = timeout
+        self._busy_retries = max(0, int(busy_retries))
+        self._busy_backoff_sec = max(0.0, float(busy_backoff_sec))
+        self._busy_backoff_max_sec = max(self._busy_backoff_sec, float(busy_backoff_max_sec))
         self._connected = False
 
     @property
@@ -181,6 +195,23 @@ class SocketBridge:
         return self._connected
 
     def call(self, method: str, **params: Any) -> Any:
+        """Send one RPC and return its result, waiting out a busy host.
+
+        ZBrush services one SDK request at a time, so a concurrent call is
+        refused with ``-32001`` and marked retryable. Retrying here is what
+        makes that marker true: callers see a queued call instead of a failure.
+        """
+        attempts = self._busy_retries + 1
+        for attempt in range(attempts):
+            try:
+                return self._call_once(method, **params)
+            except ZBrushBridgeError as exc:
+                if not self._is_retryable_busy(exc) or attempt == attempts - 1:
+                    raise
+                self._sleep_before_retry(attempt)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _call_once(self, method: str, **params: Any) -> Any:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
         try:
             raw = self._send(json.dumps(payload).encode("utf-8"))
@@ -202,6 +233,20 @@ class SocketBridge:
                 data=err.get("data") if isinstance(err.get("data"), dict) else None,
             )
         return message.get("result")
+
+    def _is_retryable_busy(self, exc: ZBrushBridgeError) -> bool:
+        """True only for a refused-but-servable host.
+
+        A ``blocked`` host is inside a native call and cannot be waited out, so
+        it must never be retried: the hard constraint is that blocked verdicts
+        are reported, not retried blind.
+        """
+        return exc.code == -32001 and bool((exc.data or {}).get("retryable"))
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        delay = min(self._busy_backoff_sec * (2**attempt), self._busy_backoff_max_sec)
+        if delay > 0:
+            time.sleep(delay)
 
     def execute_python(self, code: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         result = self.call("execute_python", code=code, context=context or {})
