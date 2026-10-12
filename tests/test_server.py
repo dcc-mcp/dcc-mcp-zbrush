@@ -335,16 +335,19 @@ def test_busy_retry_backoff_grows_and_is_capped(monkeypatch):
         busy_backoff_sec=0.1,
         busy_backoff_max_sec=0.3,
     )
+    import dcc_mcp_zbrush.bridge as bridge_module
+
     delays = []
-    monkeypatch.setattr(bridge, "_sleep_before_retry", lambda attempt: delays.append(attempt))
+    monkeypatch.setattr(bridge_module.time, "sleep", delays.append)
     monkeypatch.setattr(bridge, "_send", lambda _data, timeout=None: json.dumps(_busy_response()).encode("utf-8"))
 
     with pytest.raises(Exception):
         bridge.call("get_scene_info")
 
-    # One entry per retry (4 retries), and the real sleeps stay bounded.
-    assert delays == [0, 1, 2, 3]
-    assert bridge._sleep_before_retry(0) is None
+    # Assert the actual delay values, not just the attempt count: 0.1 and 0.2
+    # grow exponentially, then the 0.3 cap holds for the rest. A test that only
+    # counts retries stays green if the cap or the growth is deleted.
+    assert delays == [0.1, 0.2, 0.3, 0.3]
 
 
 def test_blocked_error_maps_to_zbrush_blocked_at_tool_boundary():
