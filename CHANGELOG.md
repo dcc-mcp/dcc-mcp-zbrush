@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.29](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.28...v0.2.29) (2026-10-12)
+
+
+### Bug Fixes
+
+* **bridge:** retry calls that ZBrush refuses as busy ([#95](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/95)) ([7cf7a84](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/7cf7a847e23916e8a0b9230faceef9d44be9d0f8))
+
 ## [0.2.28](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.27...v0.2.28) (2026-10-12)
 
 
