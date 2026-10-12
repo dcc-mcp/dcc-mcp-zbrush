@@ -21,6 +21,11 @@ PING_TIMEOUT_SEC = 3.0
 STATUS_READY = "ready"
 STATUS_BUSY = "busy"
 STATUS_BLOCKED = "blocked"
+STATUS_UNREACHABLE = "unreachable"
+
+# Nothing listening on the port: a missing or dead plugin, not a blocked
+# main thread. Distinguishing these keeps troubleshooting pointed the right way.
+_UNREACHABLE_ERRORS = (ConnectionRefusedError, ConnectionResetError)
 
 _BLOCKED_DETAIL = (
     "ZBrush is not executing Python: the main thread is inside a native call "
@@ -84,9 +89,13 @@ class SocketBridge:
             verdict = self.probe()
             if verdict["status"] == STATUS_BLOCKED:
                 raise ZBrushBlockedError(verdict["message"], detail=verdict)
+            if verdict["status"] == STATUS_UNREACHABLE:
+                raise ZBrushNotAvailableError(
+                    f"No ZBrush socket plugin listening at {self.endpoint}: {verdict.get('error')}"
+                )
             self._connected = True
             logger.info("SocketBridge connected to %s", self.endpoint)
-        except ZBrushBlockedError:
+        except (ZBrushBlockedError, ZBrushNotAvailableError):
             raise
         except Exception as exc:
             raise ZBrushNotAvailableError(f"Cannot connect to ZBrush socket plugin at {self.endpoint}: {exc}") from exc
@@ -98,16 +107,37 @@ class SocketBridge:
         timeout, so a stalled host surfaces as an explicit verdict rather than a
         silent hang. Returns one of:
 
-        * ``ready``   — answered, idle.
-        * ``busy``    — answered, a request is in flight. Servable, keep going.
-        * ``blocked`` — no answer within ``timeout``; the main thread is inside
-          a native call and Python is not running.
+        * ``ready``       — answered, idle.
+        * ``busy``        — answered, a request is in flight. Servable.
+        * ``blocked``     — TCP reached a listening plugin but no answer arrived
+          within ``timeout``; the main thread is inside a native call.
+        * ``unreachable`` — nothing is listening. This is a plugin/installation
+          problem, not a blocked main thread, and must not be reported as one.
         """
         payload = {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
         try:
-            raw = self._send_with_timeout(json.dumps(payload).encode("utf-8"), timeout)
+            raw = self._send(json.dumps(payload).encode("utf-8"), timeout=timeout)
             message = json.loads(raw.decode("utf-8"))
-        except (OSError, json.JSONDecodeError, ZBrushBridgeError) as exc:
+        except _UNREACHABLE_ERRORS as exc:
+            return {
+                "status": STATUS_UNREACHABLE,
+                "message": (
+                    f"No ZBrush socket plugin is listening at {self.endpoint}. "
+                    "Install bridge/plugin/mcp_socket_bridge.py in ZBrush and restart."
+                ),
+                "endpoint": self.endpoint,
+                "timeout_sec": timeout,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        except (TimeoutError, socket.timeout, json.JSONDecodeError, ZBrushBridgeError) as exc:
+            return {
+                "status": STATUS_BLOCKED,
+                "message": _BLOCKED_DETAIL,
+                "endpoint": self.endpoint,
+                "timeout_sec": timeout,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        except OSError as exc:
             return {
                 "status": STATUS_BLOCKED,
                 "message": _BLOCKED_DETAIL,
@@ -191,20 +221,14 @@ class SocketBridge:
             raise ZBrushBridgeError(f"Unexpected get_scene_info result: {result!r}")
         return result
 
-    def _send_with_timeout(self, data: bytes, timeout: float) -> bytes:
-        """Send with an explicit timeout, leaving the default path untouched.
-
-        Kept separate so the single-argument ``_send`` signature stays stable
-        for callers and tests that stub it.
-        """
-        saved, self._timeout = self._timeout, timeout
-        try:
-            return self._send(data)
-        finally:
-            self._timeout = saved
-
-    def _send(self, data: bytes) -> bytes:
-        with socket.create_connection((self._host, self._port), timeout=self._timeout) as sock:
+    def _send(self, data: bytes, timeout: Optional[float] = None) -> bytes:
+        # The timeout is a parameter, never instance state: probes and normal
+        # calls run concurrently, and temporarily rewriting self._timeout would
+        # let one path hand the other a 3-second deadline (or leak it for good).
+        with socket.create_connection(
+            (self._host, self._port),
+            timeout=self._timeout if timeout is None else timeout,
+        ) as sock:
             sock.sendall(data + b"\n")
             chunks: list[bytes] = []
             while True:

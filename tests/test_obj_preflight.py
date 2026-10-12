@@ -113,6 +113,39 @@ def test_crlf_line_endings_are_handled(tmp_path, bridge):
         assert result["oversized"] == [{"line": 6, "vertex_count": 5}]
 
 
+def test_utf8_bom_does_not_hide_a_leading_face(tmp_path, bridge):
+    """A BOM would otherwise make the first `f` record unrecognisable."""
+    obj = tmp_path / "bom.obj"
+    obj.write_bytes(b"\xef\xbb\xbff 1 2 3 4 5\n")
+
+    for result in (_adapter_scan(obj), _bridge_scan(bridge, obj)):
+        assert result["ok"] is True
+        assert result["oversized"] == [{"line": 1, "vertex_count": 5}]
+
+
+def test_backslash_continuation_is_joined_before_counting(tmp_path, bridge):
+    """OBJ allows a trailing backslash to continue a record onto the next line."""
+    obj = tmp_path / "continued.obj"
+    obj.write_text("f 1 2 3 \\\n4 5 6\n", encoding="utf-8")
+
+    for result in (_adapter_scan(obj), _bridge_scan(bridge, obj)):
+        # Six vertices across two physical lines, counted as one face.
+        assert result["faces_checked"] == 1
+        assert result["oversized"] == [{"line": 1, "vertex_count": 6}]
+
+
+def test_bare_face_record_is_counted_consistently(tmp_path, bridge):
+    obj = tmp_path / "bare.obj"
+    obj.write_text("f\nf 1 2 3 4 5\n", encoding="utf-8")
+
+    results = [_adapter_scan(obj), _bridge_scan(bridge, obj)]
+    for result in results:
+        assert result["faces_checked"] == 2
+        assert result["oversized"] == [{"line": 2, "vertex_count": 5}]
+    # The two copies must agree on the count, not just the verdict.
+    assert results[0]["faces_checked"] == results[1]["faces_checked"]
+
+
 def test_report_is_truncated_at_max_faces(tmp_path, bridge):
     obj = tmp_path / "many.obj"
     obj.write_text("".join("f 1 2 3 4 5\n" for _ in range(12)), encoding="utf-8")
@@ -166,10 +199,23 @@ def test_both_copies_agree_across_fixtures(tmp_path, bridge):
         "triplet": "f 1/1/1 2/2/2 3/3/3 4/4/4 5/5/5\n",
         "empty": "",
         "comments": "# only a comment\n",
+        "bare_f": "f\nf 1 2 3 4 5\n",
+        "continued": "f 1 2 3 \\\n4 5 6\n",
+        "negative": "f -1 -2 -3 -4 -5\n",
     }
     for name, body in fixtures.items():
         obj = tmp_path / f"{name}.obj"
         obj.write_text(body, encoding="utf-8")
+        assert _adapter_scan(obj) == _bridge_scan(bridge, obj), name
+
+    # Byte-level fixtures (BOM, CRLF) need explicit binary writes.
+    binary = {
+        "bom": b"\xef\xbb\xbff 1 2 3 4 5\n",
+        "crlf": b"f 1 2 3 4 5\r\n",
+    }
+    for name, body in binary.items():
+        obj = tmp_path / f"{name}.obj"
+        obj.write_bytes(body)
         assert _adapter_scan(obj) == _bridge_scan(bridge, obj), name
 
 

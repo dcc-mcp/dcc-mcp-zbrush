@@ -179,6 +179,35 @@ _PREFLIGHT_MAX_FACES = 8
 _PREFLIGHT_MAX_BYTES = 256 * 1024 * 1024
 
 
+def _iter_obj_lines(stream):
+    """Yield ``(line_number, content)`` with BOM, comments and continuations resolved.
+
+    Mirrors ``dcc_mcp_zbrush._obj_preflight._iter_obj_lines``. A UTF-8 BOM
+    would otherwise hide a leading ``f`` record, and a trailing backslash
+    continues a face onto the next line — counting per line under-counts it.
+    Both cases would let an over-large face through to Tool:Import.
+    """
+    pending = ""
+    pending_start = 0
+    for line_number, raw_line in enumerate(stream, start=1):
+        line = raw_line.lstrip("\ufeff").rstrip("\n").rstrip("\r")
+        if not pending:
+            pending_start = line_number
+        comment = line.find("#")
+        if comment != -1:
+            line = line[:comment]
+        stripped = line.strip()
+        if stripped.endswith("\\"):
+            pending += stripped[:-1] + " "
+            continue
+        combined = pending + stripped
+        pending = ""
+        if combined:
+            yield pending_start, combined
+    if pending.strip():
+        yield pending_start, pending.strip()
+
+
 def _scan_obj_oversized_faces(path, max_faces=_PREFLIGHT_MAX_FACES, max_bytes=_PREFLIGHT_MAX_BYTES):
     """Stream an OBJ and report faces with more than ``_MAX_FACE_VERTICES`` vertices.
 
@@ -214,17 +243,9 @@ def _scan_obj_oversized_faces(path, max_faces=_PREFLIGHT_MAX_FACES, max_bytes=_P
     faces_checked = 0
     try:
         with open(path, "r", encoding="utf-8", errors="strict") as stream:
-            for line_number, raw_line in enumerate(stream, start=1):
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                comment = line.find("#")
-                if comment != -1:
-                    line = line[:comment].strip()
-                if not line:
-                    continue
+            for line_number, line in _iter_obj_lines(stream):
                 tokens = line.split()
-                if len(tokens) < 2 or tokens[0] != "f":
+                if not tokens or tokens[0] != "f":
                     continue
 
                 faces_checked += 1

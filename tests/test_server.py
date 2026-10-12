@@ -97,7 +97,7 @@ def test_socket_bridge_ping(monkeypatch):
 
     bridge = SocketBridge(host="127.0.0.1", port=9876)
 
-    def fake_send(data: bytes) -> bytes:
+    def fake_send(data: bytes, timeout: float | None = None) -> bytes:
         payload = json.loads(data.decode("utf-8"))
         assert payload["method"] == "ping"
         return json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}).encode("utf-8")
@@ -203,8 +203,8 @@ def test_probe_uses_the_short_timeout(monkeypatch):
     bridge = SocketBridge(host="127.0.0.1", port=9876)
     seen = {}
 
-    def fake_send(_data):
-        seen["timeout"] = bridge._timeout
+    def fake_send(_data, timeout=None):
+        seen["timeout"] = timeout
         return _ping_reply()
 
     monkeypatch.setattr(bridge, "_send", fake_send)
@@ -220,15 +220,15 @@ def test_normal_calls_keep_the_long_timeout(monkeypatch):
     bridge = SocketBridge(host="127.0.0.1", port=9876)
     seen = {}
 
-    def fake_send(_data):
-        seen["timeout"] = bridge._timeout
+    def fake_send(_data, timeout=None):
+        seen["timeout"] = timeout
         return _ping_reply()
 
     monkeypatch.setattr(bridge, "_send", fake_send)
     bridge.call("ping")
 
-    assert seen["timeout"] == DEFAULT_TIMEOUT_SEC
-    # The probe must not leak its short timeout into later calls.
+    # Normal calls pass no timeout, so they fall back to the long default.
+    assert seen["timeout"] is None
     assert bridge._timeout == DEFAULT_TIMEOUT_SEC
 
 
@@ -267,52 +267,92 @@ def test_blocked_error_maps_to_zbrush_blocked_at_tool_boundary():
     assert "Do not retry automatically" in result["prompt"]
 
 
-class TestHostReadinessProbe:
-    def _probe(self, bridge, ttl=5.0):
-        from dcc_mcp_zbrush.server import _HostReadinessProbe
+def test_probe_reports_unreachable_when_nothing_listens(monkeypatch):
+    """A missing plugin must not be diagnosed as a blocked main thread."""
+    from dcc_mcp_zbrush.bridge import STATUS_UNREACHABLE, SocketBridge
 
-        return _HostReadinessProbe(lambda: bridge, ttl_seconds=ttl)
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionRefusedError("refused")))
 
-    def test_blocked_host_is_not_ready(self):
-        bridge = MagicMock()
-        bridge.probe.return_value = {"status": "blocked"}
+    verdict = bridge.probe()
 
-        assert self._probe(bridge).is_dcc_ready() is False
+    assert verdict["status"] == STATUS_UNREACHABLE
+    assert "listening" in verdict["message"]
+    # The blocked wording must not appear: it would misdirect troubleshooting.
+    assert "native call" not in verdict["message"]
 
-    def test_busy_host_stays_ready(self):
-        """A long native operation is still servable, so the bit stays green."""
-        bridge = MagicMock()
-        bridge.probe.return_value = {"status": "busy", "active_method": "execute_python"}
 
-        assert self._probe(bridge).is_dcc_ready() is True
+def test_connect_reports_unreachable_not_blocked(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushNotAvailableError
 
-    def test_ready_host_is_ready(self):
-        bridge = MagicMock()
-        bridge.probe.return_value = {"status": "ready"}
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionRefusedError("refused")))
 
-        assert self._probe(bridge).is_dcc_ready() is True
+    with pytest.raises(ZBrushNotAvailableError):
+        bridge.connect()
 
-    def test_stale_verdict_triggers_a_refresh(self):
-        bridge = MagicMock()
-        bridge.probe.side_effect = [
-            {"status": "ready"},
-            {"status": "blocked"},
-        ]
-        probe = self._probe(bridge, ttl=0.0)
+    assert bridge.is_connected() is False
 
-        assert probe.is_dcc_ready() is True
-        assert probe.is_dcc_ready() is False
-        assert bridge.probe.call_count == 2
 
-    def test_probe_failure_stays_optimistic(self):
-        """Readiness must not flap red on a transient probe error."""
-        bridge = MagicMock()
-        bridge.probe.side_effect = RuntimeError("boom")
+def test_probe_does_not_mutate_the_shared_timeout(monkeypatch):
+    """Probes run concurrently with tool calls; the timeout must not leak."""
+    from dcc_mcp_zbrush.bridge import DEFAULT_TIMEOUT_SEC, PING_TIMEOUT_SEC, SocketBridge
 
-        assert self._probe(bridge).is_dcc_ready() is True
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    seen = {}
 
-    def test_missing_bridge_yields_unknown_status(self):
-        assert self._probe(None).refresh() == {"status": None, "checked": False}
+    def fake_send(_data, timeout=None):
+        seen["timeout"] = timeout
+        return _ping_reply()
+
+    monkeypatch.setattr(bridge, "_send", fake_send)
+    bridge.probe()
+
+    assert seen["timeout"] == PING_TIMEOUT_SEC
+    assert bridge._timeout == DEFAULT_TIMEOUT_SEC
+
+
+def test_install_readiness_probe_leaves_core_default_intact():
+    """Regression: installing a probe used to pin /v1/readyz to a permanent 503.
+
+    Core 0.20.42 does not let an adapter drive the ``dcc`` bit, so the adapter
+    must not publish a probe at all. Verified against a live server: with a
+    probe published, every bit except process/skill_catalog went false and
+    readyz returned 503 even with a healthy host.
+    """
+    from dcc_mcp_zbrush.server import ZBrushMcpServer
+
+    server = object.__new__(ZBrushMcpServer)
+    server._bridge = MagicMock()
+
+    assert server._install_readiness_probe() is None
+    assert not hasattr(server, "_readiness_binder")
+
+
+def test_readyz_reports_healthy_sidecar():
+    """End-to-end: a sidecar with no ZBrush must still report ready, as on main."""
+    import time
+    import urllib.error
+    import urllib.request
+
+    from dcc_mcp_zbrush import ZBrushMcpServer
+
+    server = ZBrushMcpServer(port=0, mode="sidecar", socket_port=19959, gateway_port=0)
+    server.register_builtin_actions()
+    server.start(install_atexit_hook=False)
+    try:
+        time.sleep(1.0)
+        url = server.mcp_url.replace("/mcp", "/v1/readyz")
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                status = response.status
+                body = response.read().decode()
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            body = exc.read().decode()
+        assert status == 200, body
+    finally:
+        server.stop()
 
 
 def test_sidecar_retains_bridge_when_initial_connect_fails():

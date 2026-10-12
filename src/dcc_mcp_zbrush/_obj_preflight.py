@@ -34,6 +34,39 @@ def _face_vertex_count(tokens: List[str]) -> int:
     return count
 
 
+def _iter_obj_lines(stream):
+    """Yield ``(line_number, content)`` with BOM, comments and continuations resolved.
+
+    Two OBJ syntax details matter for correctness and both are easy to miss:
+
+    * A UTF-8 BOM prefixes the first line, which would otherwise make ``f``
+      unrecognisable and silently skip the very face record we must catch.
+    * A trailing backslash continues a record onto the next line, so a face can
+      legally be split. Counting per-line would under-count its vertices.
+    """
+    pending = ""
+    pending_start = 0
+    for line_number, raw_line in enumerate(stream, start=1):
+        # Strip the BOM only on the first line; utf-8-sig would also work but
+        # this keeps the reader tolerant of a BOM anywhere in the stream.
+        line = raw_line.lstrip("\ufeff").rstrip("\n").rstrip("\r")
+        if not pending:
+            pending_start = line_number
+        comment = line.find("#")
+        if comment != -1:
+            line = line[:comment]
+        stripped = line.strip()
+        if stripped.endswith("\\"):
+            pending += stripped[:-1] + " "
+            continue
+        combined = pending + stripped
+        pending = ""
+        if combined:
+            yield pending_start, combined
+    if pending.strip():
+        yield pending_start, pending.strip()
+
+
 def scan_obj_oversized_faces(
     path: str,
     *,
@@ -77,17 +110,9 @@ def scan_obj_oversized_faces(
 
     try:
         with open(path, "r", encoding="utf-8", errors="strict") as stream:
-            for line_number, raw_line in enumerate(stream, start=1):
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                comment = line.find("#")
-                if comment != -1:
-                    line = line[:comment].strip()
-                if not line:
-                    continue
+            for line_number, line in _iter_obj_lines(stream):
                 tokens = line.split()
-                if tokens[0] != _FACE_PREFIX:
+                if not tokens or tokens[0] != _FACE_PREFIX:
                     continue
 
                 faces_checked += 1
