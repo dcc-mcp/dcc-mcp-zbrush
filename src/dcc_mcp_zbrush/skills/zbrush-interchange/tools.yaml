@@ -6,7 +6,7 @@ tools:
       redraws during export. Requires the parent directory to exist.
     source_file: scripts/export_active_subtool_obj.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       destructive_hint: true

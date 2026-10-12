@@ -47,9 +47,10 @@ def test_tools_yaml_contract(skill_dir: str) -> None:
     data = yaml.safe_load(tools_path.read_text(encoding="utf-8"))
     for tool in data["tools"]:
         assert tool.get("execution") in ("sync", "async")
-        # Skill handlers run in the sidecar; the socket bridge marshals SDK
-        # work onto ZBrush's main thread inside the host process.
-        assert tool.get("affinity") == "any"
+        # ZBrush Python APIs are host-bound, so every tool must declare main.
+        # The field describes where the work has to run, not where the handler
+        # lives: the sidecar process marshals the call into the host.
+        assert tool.get("affinity") == "main"
         assert (tools_path.parent / tool["source_file"]).is_file()
         assert "inputSchema" not in tool
         assert tool["input_schema"]["type"] == "object"

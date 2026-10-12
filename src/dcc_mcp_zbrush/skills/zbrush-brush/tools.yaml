@@ -6,7 +6,7 @@ tools:
       restoring it if ZBrush fails to save the new brush.
     source_file: scripts/wrinkle_brush.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       destructive_hint: true
@@ -31,7 +31,7 @@ tools:
       ZSub, intensity, focal-shift, draw-size, and LazyMouse settings.
     source_file: scripts/wrinkle_brush.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       destructive_hint: true

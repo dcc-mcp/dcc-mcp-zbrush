@@ -9,7 +9,7 @@ tools:
       list of imported subtool names and any non-fatal warnings.
     source_file: scripts/import_to_scene.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       destructive_hint: true

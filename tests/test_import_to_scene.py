@@ -36,7 +36,7 @@ def test_tools_yaml_contract() -> None:
     data = yaml.safe_load(tools_path.read_text(encoding="utf-8"))
     for tool in data["tools"]:
         assert tool.get("execution") in ("sync", "async")
-        assert tool.get("affinity") in ("main", "any")
+        assert tool.get("affinity") == "main"
         assert (tools_path.parent / tool["source_file"]).is_file()
 
 
