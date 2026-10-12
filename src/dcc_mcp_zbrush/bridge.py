@@ -16,6 +16,18 @@ logger = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9876
 DEFAULT_TIMEOUT_SEC = 610.0
+PING_TIMEOUT_SEC = 3.0
+
+STATUS_READY = "ready"
+STATUS_BUSY = "busy"
+STATUS_BLOCKED = "blocked"
+
+_BLOCKED_DETAIL = (
+    "ZBrush is not executing Python: the main thread is inside a native call "
+    "and no bridge request can be serviced. An open ZBrush Note has this "
+    "signature, but so does any long native operation, so this is not proof "
+    "of a dialog."
+)
 
 
 class ZBrushBridgeError(RuntimeError):
@@ -31,6 +43,18 @@ class ZBrushBridgeError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.data = dict(data or {})
+
+
+class ZBrushBlockedError(RuntimeError):
+    """Raised when ZBrush does not answer a ping within the probe timeout.
+
+    Carries the ``probe()`` verdict in :attr:`detail` so callers can report the
+    classification without re-parsing the message.
+    """
+
+    def __init__(self, message: str, *, detail: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.detail = dict(detail or {})
 
 
 class ZBrushNotAvailableError(ConnectionError):
@@ -57,11 +81,68 @@ class SocketBridge:
 
     def connect(self) -> None:
         try:
-            self.call("ping")
+            verdict = self.probe()
+            if verdict["status"] == STATUS_BLOCKED:
+                raise ZBrushBlockedError(verdict["message"], detail=verdict)
             self._connected = True
             logger.info("SocketBridge connected to %s", self.endpoint)
+        except ZBrushBlockedError:
+            raise
         except Exception as exc:
             raise ZBrushNotAvailableError(f"Cannot connect to ZBrush socket plugin at {self.endpoint}: {exc}") from exc
+
+    def probe(self, timeout: float = PING_TIMEOUT_SEC) -> Dict[str, Any]:
+        """Classify ZBrush's ability to service a request right now.
+
+        Pings with a short timeout instead of waiting out the full request
+        timeout, so a stalled host surfaces as an explicit verdict rather than a
+        silent hang. Returns one of:
+
+        * ``ready``   — answered, idle.
+        * ``busy``    — answered, a request is in flight. Servable, keep going.
+        * ``blocked`` — no answer within ``timeout``; the main thread is inside
+          a native call and Python is not running.
+        """
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
+        try:
+            raw = self._send_with_timeout(json.dumps(payload).encode("utf-8"), timeout)
+            message = json.loads(raw.decode("utf-8"))
+        except (OSError, json.JSONDecodeError, ZBrushBridgeError) as exc:
+            return {
+                "status": STATUS_BLOCKED,
+                "message": _BLOCKED_DETAIL,
+                "endpoint": self.endpoint,
+                "timeout_sec": timeout,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+        result = message.get("result")
+        if not isinstance(result, dict):
+            return {
+                "status": STATUS_BLOCKED,
+                "message": _BLOCKED_DETAIL,
+                "endpoint": self.endpoint,
+                "timeout_sec": timeout,
+                "error": f"Unexpected ping result: {result!r}",
+            }
+
+        busy = bool(result.get("busy"))
+        active_method = result.get("active_method")
+        if busy:
+            return {
+                "status": STATUS_BUSY,
+                "message": f"ZBrush is servicing {active_method or 'a request'}",
+                "endpoint": self.endpoint,
+                "active_method": active_method,
+                "timeout_sec": timeout,
+            }
+        return {
+            "status": STATUS_READY,
+            "message": "ZBrush is idle and can service requests",
+            "endpoint": self.endpoint,
+            "active_method": None,
+            "timeout_sec": timeout,
+        }
 
     def disconnect(self) -> None:
         self._connected = False
@@ -109,6 +190,18 @@ class SocketBridge:
         if not isinstance(result, dict):
             raise ZBrushBridgeError(f"Unexpected get_scene_info result: {result!r}")
         return result
+
+    def _send_with_timeout(self, data: bytes, timeout: float) -> bytes:
+        """Send with an explicit timeout, leaving the default path untouched.
+
+        Kept separate so the single-argument ``_send`` signature stays stable
+        for callers and tests that stub it.
+        """
+        saved, self._timeout = self._timeout, timeout
+        try:
+            return self._send(data)
+        finally:
+            self._timeout = saved
 
     def _send(self, data: bytes) -> bytes:
         with socket.create_connection((self._host, self._port), timeout=self._timeout) as sock:

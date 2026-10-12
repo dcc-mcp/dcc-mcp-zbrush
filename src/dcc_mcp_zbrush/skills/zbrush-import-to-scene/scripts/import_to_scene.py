@@ -15,6 +15,11 @@ from dcc_mcp_core.asset_import import (
 )
 from dcc_mcp_core.skill import skill_entry
 
+from dcc_mcp_zbrush._obj_preflight import (
+    obj_preflight_error,
+    obj_preflight_unverifiable_error,
+    scan_obj_oversized_faces,
+)
 from dcc_mcp_zbrush._skill_host import run_quiet_ui, subtool_name_from_path
 from dcc_mcp_zbrush.api import with_zbrush, zb_error, zb_success
 
@@ -45,6 +50,14 @@ def _import(zbc: Any, file_path: str) -> Dict[str, Any]:
             "error": "FILE_NOT_FOUND",
             "imported_nodes": [],
         }
+    # A face with more than four vertices makes ZBrush's OBJ importer raise a
+    # blocking Note. While it is open the main thread holds the GIL and the
+    # bridge cannot answer, so refuse before pressing Tool:Import.
+    preflight = scan_obj_oversized_faces(abs_path)
+    if not preflight["ok"]:
+        return obj_preflight_unverifiable_error(preflight)
+    if preflight["oversized"]:
+        return obj_preflight_error(preflight)
     subtool_count_before = int(zbc.get_subtool_count())
     duplicate_failed = False
 
@@ -142,11 +155,16 @@ def import_to_scene(
             imported_nodes=[],
             warnings=warnings,
             error_message=payload.get("message", "Import failed"),
+            extra={"preflight": payload["preflight"]} if "preflight" in payload else {},
         )
         return zb_error(
             result.error_message or "Import failed",
             payload.get("error", "IMPORT_FAILED"),
-            prompt="Check that the file path is correct and ZBrush is running.",
+            prompt=(
+                "Fix the reported faces, then call import_to_scene again."
+                if payload.get("error") == "OBJ_FACE_TOO_LARGE"
+                else "Check that the file path is correct and ZBrush is running."
+            ),
             **result.to_dict(),
         )
 

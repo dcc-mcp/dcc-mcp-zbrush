@@ -6,7 +6,7 @@ import functools
 import logging
 from typing import Any, Callable, List, Optional, TypeVar
 
-from dcc_mcp_zbrush.bridge import ZBrushBridgeError
+from dcc_mcp_zbrush.bridge import ZBrushBlockedError, ZBrushBridgeError
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,20 @@ def with_zbrush(func: _F) -> _F:
                     "Copy bridge/plugin/mcp_socket_bridge.py into ZStartup/ZPlugs64",
                     "Set DCC_MCP_ZBRUSH_MODE=embedded when running inside ZBrush",
                 ],
+            )
+        except ZBrushBlockedError as exc:
+            # Never auto-retry and never auto-answer: a block may be a ZBrush
+            # Note waiting on a human. Report it and let the caller decide.
+            # The verdict is nested rather than splatted: it carries its own
+            # "message" key, which would collide with zb_error's first argument.
+            return zb_error(
+                str(exc),
+                "ZBRUSH_BLOCKED",
+                prompt=(
+                    "Do not retry automatically. Report the block to the user; "
+                    "ZBrush may be showing a dialog that needs a human."
+                ),
+                blocked=exc.detail,
             )
         except ZBrushBridgeError as exc:
             error_code = {

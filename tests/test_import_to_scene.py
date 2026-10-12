@@ -219,6 +219,60 @@ class TestImportToSceneSkill:
         call_args = mock_zbc.set_next_filename.call_args[0][0]
         assert "low.obj" in call_args
 
+    def test_pentagon_obj_is_rejected_before_pressing_import(self, tmp_path) -> None:
+        """The exact repro from upstream: a five-vertex face opens a Note."""
+        asset_file = tmp_path / "pentagon.obj"
+        asset_file.write_text(
+            "v 0 1 0\nv 0.95 0.31 0\nv 0.59 -0.81 0\nv -0.59 -0.81 0\nv -0.95 0.31 0\nf 1 2 3 4 5\n",
+            encoding="utf-8",
+        )
+
+        mock_zbc = self._make_mock_zbc()
+        mod = _load_script("import_to_scene.py")
+
+        with patch(
+            "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+            lambda embedded, *_a, **_k: embedded(mock_zbc),
+        ):
+            with patch("dcc_mcp_zbrush.api.with_zbrush", lambda f: f):
+                result = mod.import_to_scene(
+                    asset_id="arch/pentagon",
+                    variants=[{"local_path": str(asset_file), "format": "obj"}],
+                )
+
+        assert result["success"] is False
+        assert result["error"] == "OBJ_FACE_TOO_LARGE"
+        assert result["context"]["extra"]["preflight"]["oversized"] == [
+            {"line": 6, "vertex_count": 5},
+        ]
+        # The whole point: never reach Tool:Import, so the Note never opens.
+        mock_zbc.press.assert_not_called()
+        mock_zbc.set_next_filename.assert_not_called()
+
+    def test_quad_obj_still_imports(self, tmp_path) -> None:
+        asset_file = tmp_path / "quad.obj"
+        asset_file.write_text(
+            "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n",
+            encoding="utf-8",
+        )
+
+        mock_zbc = self._make_mock_zbc("/ZBrush/quad.ZTL")
+        mock_zbc.get_subtool_count.side_effect = [1, 2, 2]
+        mod = _load_script("import_to_scene.py")
+
+        with patch(
+            "dcc_mcp_zbrush._skill_host.run_in_zbrush",
+            lambda embedded, *_a, **_k: embedded(mock_zbc),
+        ):
+            with patch("dcc_mcp_zbrush.api.with_zbrush", lambda f: f):
+                result = mod.import_to_scene(
+                    asset_id="arch/quad",
+                    variants=[{"local_path": str(asset_file), "format": "obj"}],
+                )
+
+        assert result["success"] is True
+        assert call("Tool:Import") in mock_zbc.press.call_args_list
+
     def test_unsupported_format_returns_error(self, tmp_path) -> None:
         asset_file = tmp_path / "scene.usd"
         asset_file.write_text("# usd placeholder")

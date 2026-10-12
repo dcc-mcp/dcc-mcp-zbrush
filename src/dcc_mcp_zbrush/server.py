@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +23,67 @@ SERVER_VERSION = __version__
 DEFAULT_PORT = 0
 _DCC_NAME = "zbrush"
 _BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+
+# A blocked host stops answering pings, so probing on every readiness hit would
+# add the full probe timeout to /v1/readyz latency. Cache the verdict instead.
+_READINESS_VERDICT_TTL_SECONDS = 5.0
+
+
+class _HostReadinessProbe:
+    """Cache the sidecar's last reachability verdict for the readiness bit.
+
+    ``busy`` stays servable — a long native operation is still making progress
+    and answers pings. ``blocked`` is not servable: the main thread holds the
+    GIL in a native call and no request can run, so ``/v1/readyz`` must report
+    the instance as not ready instead of the default optimistic ``True``.
+    """
+
+    def __init__(self, bridge_getter: Any, ttl_seconds: float = _READINESS_VERDICT_TTL_SECONDS) -> None:
+        self._bridge_getter = bridge_getter
+        self._ttl_seconds = ttl_seconds
+        self._lock = threading.Lock()
+        self._status: Optional[str] = None
+        self._detail: Dict[str, Any] = {}
+        self._checked_at = 0.0
+
+    def refresh(self) -> Dict[str, Any]:
+        bridge = self._bridge_getter()
+        if bridge is None:
+            return {"status": None, "checked": False}
+        try:
+            verdict = bridge.probe()
+        except Exception as exc:  # noqa: BLE001 - readiness must never raise
+            logger.debug("sidecar readiness probe failed: %s", exc)
+            return {"status": None, "checked": False}
+        with self._lock:
+            self._status = verdict.get("status")
+            self._detail = verdict
+            self._checked_at = time.monotonic()
+        return verdict
+
+    def status(self) -> Optional[str]:
+        with self._lock:
+            # A non-positive TTL means "never cache"; compare with >= so a zero
+            # TTL is stale even when the clock has not visibly advanced.
+            elapsed = time.monotonic() - self._checked_at
+            stale = self._ttl_seconds <= 0 or elapsed >= self._ttl_seconds
+            return None if stale else self._status
+
+    def is_dcc_ready(self) -> bool:
+        """Return the cached verdict for core's ``dcc_ready_probe`` hook."""
+        status = self.status()
+        if status is None:
+            # Use the refreshed verdict directly rather than re-reading it
+            # through the staleness filter, which would discard it again when
+            # the TTL is zero.
+            status = self.refresh().get("status")
+        # Unknown verdicts stay optimistic: readiness must not flap on a
+        # transient probe failure, only a confirmed block turns the bit red.
+        return status != "blocked"
+
+    def last_detail(self) -> Dict[str, Any]:
+        with self._lock:
+            return dict(self._detail)
 
 
 @dataclass
@@ -103,6 +166,8 @@ class ZBrushMcpServer(DccServerBase):
         self._socket_host = options.socket_host
         self._socket_port = options.socket_port
         self._bridge = None
+        self._readiness_probe: Optional[_HostReadinessProbe] = None
+        self._readiness_binder: Optional[Any] = None
 
         if options.gateway_port == 0 or (
             options.gateway_port is None and not _env.resolve_enable_gateway_failover(options.enable_gateway_failover)
@@ -157,6 +222,28 @@ class ZBrushMcpServer(DccServerBase):
                 "Install bridge/plugin/mcp_socket_bridge.py in ZBrush and restart.",
                 exc,
             )
+        self._install_readiness_probe()
+
+    def _install_readiness_probe(self) -> None:
+        """Teach core's readiness bit that a blocked ZBrush is not servable.
+
+        Core defaults the ``dcc`` bit to true, which reports a stalled instance
+        as ready. Publishing a probe makes ``/v1/readyz`` go red while the host
+        main thread is stuck in a native call.
+        """
+        if self._bridge is None:
+            return
+        self._readiness_probe = _HostReadinessProbe(lambda: self._bridge)
+        try:
+            from dcc_mcp_core.readiness import AdapterReadinessBinder  # noqa: PLC0415
+
+            self._readiness_binder = AdapterReadinessBinder(
+                self,
+                dcc_ready_probe=self._readiness_probe.is_dcc_ready,
+            )
+        except Exception as exc:  # noqa: BLE001 - readiness must never break startup
+            logger.debug("readiness probe could not be published: %s", exc)
+            self._readiness_binder = None
 
     def register_builtin_actions(
         self,

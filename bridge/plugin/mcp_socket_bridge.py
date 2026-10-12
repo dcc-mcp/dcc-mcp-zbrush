@@ -169,6 +169,113 @@ def _import_zbc():
     return zbc
 
 
+# ── OBJ face-size preflight ──────────────────────────────────────────────
+# Mirrors dcc_mcp_zbrush._obj_preflight. This plugin is vendored into ZBrush
+# and may run without dcc-mcp-zbrush importable, so the logic is duplicated
+# here rather than imported. Keep the two copies in step.
+
+_MAX_FACE_VERTICES = 4
+_PREFLIGHT_MAX_FACES = 8
+_PREFLIGHT_MAX_BYTES = 256 * 1024 * 1024
+
+
+def _scan_obj_oversized_faces(path, max_faces=_PREFLIGHT_MAX_FACES, max_bytes=_PREFLIGHT_MAX_BYTES):
+    """Stream an OBJ and report faces with more than ``_MAX_FACE_VERTICES`` vertices.
+
+    ZBrush's OBJ importer triangulates on load; an over-large face makes it raise
+    a blocking Note. While that Note is open the main thread sits in a native
+    ``GetSystemInput`` loop holding the GIL, so the bridge cannot answer or
+    dismiss it. Validating here keeps the Note from ever opening.
+
+    ``ok=False`` means "could not verify"; callers must refuse the import rather
+    than fail open.
+    """
+    result = {
+        "ok": False,
+        "faces_checked": 0,
+        "oversized": [],
+        "truncated": False,
+        "max_face_vertices": _MAX_FACE_VERTICES,
+        "size_bytes": None,
+        "reason": None,
+    }
+    try:
+        size_bytes = os.path.getsize(path)
+    except OSError:
+        result["reason"] = "UNREADABLE"
+        return result
+
+    result["size_bytes"] = size_bytes
+    if size_bytes > max_bytes:
+        result["reason"] = "FILE_TOO_LARGE"
+        return result
+
+    oversized = []
+    faces_checked = 0
+    try:
+        with open(path, "r", encoding="utf-8", errors="strict") as stream:
+            for line_number, raw_line in enumerate(stream, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                comment = line.find("#")
+                if comment != -1:
+                    line = line[:comment].strip()
+                if not line:
+                    continue
+                tokens = line.split()
+                if len(tokens) < 2 or tokens[0] != "f":
+                    continue
+
+                faces_checked += 1
+                vertex_count = len([token for token in tokens[1:] if token])
+                if vertex_count > _MAX_FACE_VERTICES:
+                    oversized.append({"line": line_number, "vertex_count": vertex_count})
+                    if len(oversized) >= max_faces:
+                        result["truncated"] = True
+                        break
+    except (OSError, UnicodeDecodeError):
+        result["reason"] = "UNREADABLE"
+        return result
+
+    result["ok"] = True
+    result["faces_checked"] = faces_checked
+    result["oversized"] = oversized
+    return result
+
+
+def _obj_preflight_error(preflight):
+    faces = preflight.get("oversized") or []
+    count = len(faces)
+    plural = "face" if count == 1 else "faces"
+    return {
+        "success": False,
+        "message": (
+            "OBJ has {} {} with more than {} vertices; ZBrush would open a "
+            "blocking Note. Triangulate or quadrangulate the mesh first "
+            "(ZRemesher or an external DCC) and retry."
+        ).format(count, plural, _MAX_FACE_VERTICES),
+        "error": "OBJ_FACE_TOO_LARGE",
+        "imported_nodes": [],
+        "preflight": preflight,
+    }
+
+
+def _obj_preflight_unverifiable_error(preflight):
+    reason = preflight.get("reason") or "UNREADABLE"
+    return {
+        "success": False,
+        "message": (
+            "OBJ could not be validated before import ({}); refusing to press "
+            "Tool:Import because an unreadable or oversized mesh may open a "
+            "blocking Note. Verify the file and retry."
+        ).format(reason),
+        "error": "OBJ_PREFLIGHT_FAILED",
+        "imported_nodes": [],
+        "preflight": preflight,
+    }
+
+
 def _subtool_status_flags(status: int) -> Dict[str, bool]:
     return {"visible": bool(status & 0x01), "locked": bool(status & 0x02)}
 
@@ -779,6 +886,13 @@ def _import_to_scene(file_path: str) -> Dict[str, Any]:
             "error": "FILE_NOT_FOUND",
             "imported_nodes": [],
         }
+    # Refuse faces ZBrush cannot triangulate: they raise a blocking Note that
+    # the bridge cannot observe or dismiss while the GIL is held.
+    preflight = _scan_obj_oversized_faces(abs_path)
+    if not preflight["ok"]:
+        return _obj_preflight_unverifiable_error(preflight)
+    if preflight["oversized"]:
+        return _obj_preflight_error(preflight)
     zbc = _import_zbc()
     subtool_count_before = int(zbc.get_subtool_count())
     duplicate_failed = False

@@ -588,6 +588,46 @@ def test_bridge_duplicates_active_subtool_before_obj_import(tmp_path) -> None:
     assert mock_zbc.show_actions.call_args_list == [call(0), call(1)]
 
 
+def test_bridge_rejects_pentagon_obj_before_pressing_import(tmp_path) -> None:
+    """A five-vertex face makes ZBrush raise a Note the bridge cannot answer."""
+    bridge = _load_bridge_plugin()
+    asset_file = tmp_path / "pentagon.obj"
+    asset_file.write_text(
+        "v 0 1 0\nv 0.95 0.31 0\nv 0.59 -0.81 0\nv -0.59 -0.81 0\nv -0.95 0.31 0\nf 1 2 3 4 5\n",
+        encoding="utf-8",
+    )
+    mock_zbc = MagicMock()
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._import_to_scene(str(asset_file))
+
+    assert result["success"] is False
+    assert result["error"] == "OBJ_FACE_TOO_LARGE"
+    assert result["preflight"]["oversized"] == [{"line": 6, "vertex_count": 5}]
+    # Never reach Tool:Import, so the blocking Note never opens.
+    mock_zbc.press.assert_not_called()
+    mock_zbc.set_next_filename.assert_not_called()
+
+
+def test_bridge_imports_quad_obj(tmp_path) -> None:
+    bridge = _load_bridge_plugin()
+    asset_file = tmp_path / "quad.obj"
+    asset_file.write_text(
+        "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n",
+        encoding="utf-8",
+    )
+    mock_zbc = MagicMock()
+    mock_zbc.exists.return_value = False
+    mock_zbc.get_subtool_count.side_effect = [1, 1]
+    mock_zbc.get_active_tool_path.return_value = "/ZBrush/quad"
+    bridge._import_zbc = lambda: mock_zbc
+
+    result = bridge._import_to_scene(str(asset_file))
+
+    assert result["success"] is True
+    mock_zbc.press.assert_called_once_with("Tool:Import")
+
+
 def test_bridge_imports_into_empty_tool_without_duplicate(tmp_path) -> None:
     bridge = _load_bridge_plugin()
     asset_file = tmp_path / "asset.obj"
