@@ -160,20 +160,29 @@ class ZBrushMcpServer(DccServerBase):
         self._install_readiness_probe()
 
     def _install_readiness_probe(self) -> None:
-        """No-op: core 0.20.42 cannot drive the ``dcc`` bit from an adapter.
+        """No-op: wiring the readiness probe here would gate MCP calls on it.
 
-        Verified against a live server on this core version:
-        ``set_readiness_probe`` after ``start()`` is accepted but does not swap
-        the probe instance that ``/v1/readyz`` reads, so ``probe.set_dcc_ready``
-        and ``refresh_dcc_ready`` have no effect on the HTTP response. Installing
-        a probe at all replaces core's own default and pins ``dcc`` to false,
-        turning a healthy sidecar into a permanent 503. The dcc_ready_probe
-        callback is also never polled by core — only ``refresh_dcc_ready()``
-        evaluates it.
+        Core 0.20.42 *can* drive the ``dcc`` bit — measured on a live server,
+        publishing a probe before ``start()`` and setting the bits statically
+        yields 200, and ``refresh_dcc_ready()`` flips ``/v1/readyz`` between 200
+        and 503 in real time. It is not a core capability gap. Two things make it
+        a bad fit here regardless:
 
-        Until core exposes a working hook, readiness reporting is left at core's
-        default and the blocked signal is surfaced through ``SocketBridge.probe``
-        and the ``ZBRUSH_BLOCKED`` tool error instead.
+        * The probe is shared with ``/mcp`` and ``/v1/call``, so ``dcc_ready_probe``
+          becomes a gate on MCP calls, not just on a health endpoint. A probe
+          callback that raises fails closed: core's ``_resolve_dcc_ready``
+          converts the exception into ``False``, and the whole instance goes 503.
+        * The wiring is timing-sensitive — a probe published after ``start()``
+          never swaps in at all, so the effect differs by call site.
+
+        An earlier revision of this method asserted that core cannot drive the
+        bit. That was an overgeneralisation from measurements taken only after
+        ``start()``; it is false and is retained here as a warning against
+        re-deriving the conclusion from a single timing.
+
+        Readiness reporting is therefore left at core's default, and the blocked
+        signal is surfaced through ``SocketBridge.probe`` and the
+        ``ZBRUSH_BLOCKED`` tool error instead.
         """
         return
 
