@@ -244,6 +244,109 @@ def test_connect_raises_blocked_instead_of_half_connecting(monkeypatch):
     assert bridge.is_connected() is False
 
 
+def _busy_response(active_method="execute_python"):
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+            "code": -32001,
+            "message": f"ZBrush bridge is busy with {active_method}",
+            "data": {"retryable": True, "active_method": active_method},
+        },
+    }
+
+
+def test_call_retries_busy_until_the_host_frees_up(monkeypatch):
+    """A refused-but-servable call must be waited out, not surfaced as failure."""
+    from dcc_mcp_zbrush.bridge import SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876, busy_backoff_sec=0)
+    replies = [
+        _busy_response(),
+        _busy_response(),
+        {"jsonrpc": "2.0", "id": 1, "result": {"ok": True}},
+    ]
+    monkeypatch.setattr(bridge, "_send", lambda _data, timeout=None: json.dumps(replies.pop(0)).encode("utf-8"))
+
+    assert bridge.call("get_scene_info") == {"ok": True}
+    assert replies == []
+
+
+def test_call_gives_up_after_the_configured_retries(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876, busy_retries=2, busy_backoff_sec=0)
+    attempts = []
+    monkeypatch.setattr(
+        bridge,
+        "_send",
+        lambda _data, timeout=None: (attempts.append(1), json.dumps(_busy_response()).encode("utf-8"))[1],
+    )
+
+    with pytest.raises(ZBrushBridgeError) as caught:
+        bridge.call("get_scene_info")
+
+    assert caught.value.code == -32001
+    # 1 initial attempt + 2 retries.
+    assert len(attempts) == 3
+
+
+def test_call_does_not_retry_blocked_or_non_retryable_errors(monkeypatch):
+    """Only a servable busy host is waited out; everything else fails fast."""
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876, busy_retries=3, busy_backoff_sec=0)
+    attempts = []
+    responses = [
+        # -32001 but explicitly not retryable.
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32001, "message": "busy", "data": {"retryable": False}},
+        },
+        # A blocked host: inside a native call, must never be retried.
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32003, "message": "blocked", "data": {"retryable": True}},
+        },
+    ]
+    for response in responses:
+        attempts.clear()
+        monkeypatch.setattr(
+            bridge,
+            "_send",
+            lambda _data, timeout=None, r=response: (attempts.append(1), json.dumps(r).encode("utf-8"))[1],
+        )
+
+        with pytest.raises(ZBrushBridgeError):
+            bridge.call("get_scene_info")
+
+        assert len(attempts) == 1
+
+
+def test_busy_retry_backoff_grows_and_is_capped(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge
+
+    bridge = SocketBridge(
+        host="127.0.0.1",
+        port=9876,
+        busy_retries=4,
+        busy_backoff_sec=0.1,
+        busy_backoff_max_sec=0.3,
+    )
+    delays = []
+    monkeypatch.setattr(bridge, "_sleep_before_retry", lambda attempt: delays.append(attempt))
+    monkeypatch.setattr(bridge, "_send", lambda _data, timeout=None: json.dumps(_busy_response()).encode("utf-8"))
+
+    with pytest.raises(Exception):
+        bridge.call("get_scene_info")
+
+    # One entry per retry (4 retries), and the real sleeps stay bounded.
+    assert delays == [0, 1, 2, 3]
+    assert bridge._sleep_before_retry(0) is None
+
+
 def test_blocked_error_maps_to_zbrush_blocked_at_tool_boundary():
     from dcc_mcp_zbrush import api
     from dcc_mcp_zbrush.bridge import ZBrushBlockedError
