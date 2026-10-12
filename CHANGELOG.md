@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.28](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.27...v0.2.28) (2026-10-12)
+
+
+### Bug Fixes
+
+* **import:** reject OBJ faces ZBrush cannot triangulate ([38d8b1b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/38d8b1b2d4734f221313d56b510b881d6f1db78c))
+* **skills:** declare thread affinity main for all ZBrush tools ([1b64334](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/1b643340f2a314dc154d6499c5ae7ae7726118f0))
+
+
+### Documentation
+
+* **readme:** add the generated DCC-MCP host matrix pointer ([#85](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/85)) ([757137b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/757137bb22d6297ca530cc6c879a414086c086e0))
+* refresh the generated DCC-MCP host matrix pointer ([#88](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/88)) ([9b2712c](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/9b2712cd990553fa5a1f98e94f1c5d08abc1e83b))
+
 ## [0.2.27](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.26...v0.2.27) (2026-09-29)
 
 
