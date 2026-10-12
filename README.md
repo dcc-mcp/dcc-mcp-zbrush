@@ -194,7 +194,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 ## Features (v0.2.0)
 
 - `DccServerBase` adapter with progressive skill loading
-- Bundled skills: `zbrush-scripting`, `zbrush-scene`, `zbrush-subtool`, `zbrush-brush`, `zbrush-viewport`, `zbrush-interchange`, `zbrush-import-to-scene`
+- Bundled skills: `zbrush-scripting`, `zbrush-scene`, `zbrush-subtool`, `zbrush-brush`, `zbrush-viewport`, `zbrush-interchange`, `zbrush-import-to-scene`, `zbrush-dialog`
 - In-process executor for ZBrush's embedded Python VM
 - Optional socket bridge plugin for sidecar deployments
 - Top-level DCC MCP palette registered through `zbrush.commands`
@@ -227,6 +227,7 @@ AI Agent → Gateway :9765 → OS-assigned MCP instance → ZBrushMcpServer
 | `zbrush-brush` | `create_wrinkle_brush`, `load_wrinkle_brush` |
 | `zbrush-viewport` | `capture_turntable` |
 | `zbrush-interchange` | `export_active_subtool_obj` |
+| `zbrush-dialog` | `get_active_dialog`, `click_dialog_button` (sidecar on macOS: read and answer a blocking ZBrush note) |
 
 ## Path concepts
 
@@ -240,6 +241,8 @@ the shared `Python/init.py` manually.
 ## Skill authoring
 
 Skills lazy-import `zbrush.commands` and run on the main thread (`affinity: main`).
+The sidecar-only `zbrush-dialog` skill is the one exception (`affinity: any`): it
+never calls `zbrush.commands` and must run while a note blocks the main thread.
 
 ```python
 from dcc_mcp_core.skill import skill_entry

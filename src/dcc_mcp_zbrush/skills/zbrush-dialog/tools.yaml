@@ -1,0 +1,113 @@
+tools:
+  - name: get_active_dialog
+    description: >-
+      Detect whether a modal ZBrush note or popup dialog is blocking ZBrush,
+      and read it. Probes the socket bridge from the sidecar with a short
+      timeout (it never queues work on the ZBrush main thread); when the
+      status is blocked, captures the ZBrush window (ZBrush draws its notes
+      inside it) or a message box window, and returns the OCR dialog_text,
+      the clickable button_candidates, dialog_kind (informational, question,
+      destructive_confirmation), and the screenshot path.
+    source_file: scripts/get_active_dialog.py
+    execution: sync
+    # Sidecar-only on purpose: it must run while a note blocks the ZBrush main
+    # thread, so routing it to that thread would queue it behind the note.
+    affinity: any
+    timeout_hint_secs: 120
+    group: core
+    annotations:
+      read_only_hint: true
+      idempotent_hint: true
+      destructive_hint: false
+    input_schema:
+      type: object
+      properties:
+        force_capture:
+          type: boolean
+          default: false
+          description: >-
+            Capture and read the window even when ZBrush answers the bridge,
+            for example to read a non-blocking note.
+        process_id:
+          type: integer
+          minimum: 1
+          description: Optional ZBrush process id when several ZBrush processes run.
+        output_dir:
+          type: string
+          description: Optional existing directory for the PNG screenshot (default is the system temp directory).
+        probe_timeout_secs:
+          type: number
+          minimum: 0.5
+          maximum: 30
+          default: 3
+          description: Seconds to wait for the bridge ping before ZBrush counts as blocked.
+    next-tools:
+      on-success:
+        - zbrush_dialog__click_dialog_button
+        - zbrush_scene__get_scene_info
+      on-failure:
+        - zbrush_scripting__get_session_info
+  - name: click_dialog_button
+    description: >-
+      Click one labelled button (for example OK, Cancel, Yes, No) on the modal
+      ZBrush note that blocks ZBrush, then verify that the bridge answers
+      again. Reads the window first, matches exactly one visible label, posts
+      one mouse click at its centre, and returns dismissed=true only when
+      ZBrush is free. Refuses when no dialog blocks ZBrush unless force=true.
+    source_file: scripts/click_dialog_button.py
+    execution: sync
+    # Sidecar-only on purpose: it must run while a note blocks the ZBrush main
+    # thread, so routing it to that thread would queue it behind the note.
+    affinity: any
+    timeout_hint_secs: 180
+    group: core
+    annotations:
+      read_only_hint: false
+      idempotent_hint: false
+      destructive_hint: true
+    input_schema:
+      type: object
+      required: [button_name]
+      properties:
+        button_name:
+          type: string
+          minLength: 1
+          description: Button label exactly as returned in button_candidates by get_active_dialog.
+        match:
+          type: string
+          enum: [exact, contains]
+          default: exact
+          description: How button_name is compared with the visible labels (case-insensitive).
+        force:
+          type: boolean
+          default: false
+          description: Click even when the bridge answers (a non-blocking note).
+        allow_destructive:
+          type: boolean
+          default: false
+          description: >-
+            Confirm a destructive note (delete, overwrite, discard, undo). Set
+            only after the user approved; Cancel never needs it.
+        process_id:
+          type: integer
+          minimum: 1
+          description: Optional ZBrush process id when several ZBrush processes run.
+        output_dir:
+          type: string
+          description: Optional existing directory for the PNG screenshot taken before the click.
+        probe_timeout_secs:
+          type: number
+          minimum: 0.5
+          maximum: 30
+          default: 3
+          description: Seconds to wait for each bridge ping.
+    call_examples:
+      - arguments:
+          button_name: "Symmetrical Triangles Only"
+        note: Answer the OBJ import note about polygons with more than four sides.
+    next-tools:
+      on-success:
+        - zbrush_scene__get_scene_info
+        - zbrush_dialog__get_active_dialog
+      on-failure:
+        - zbrush_dialog__get_active_dialog
