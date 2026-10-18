@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.30](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.29...v0.2.30) (2026-10-18)
+
+
+### Features
+
+* add zbrush-dialog tools to detect, read, and answer blocking notes ([c4866be](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/c4866be6721855f678aa1aeb09e0574a25a9518a))
+
 ## [0.2.29](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.28...v0.2.29) (2026-10-12)
 
 
