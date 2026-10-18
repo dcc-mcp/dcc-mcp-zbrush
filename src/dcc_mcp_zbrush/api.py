@@ -34,6 +34,11 @@ def is_zbrush_available() -> bool:
     return _bridge is not None and _bridge.is_connected()
 
 
+def peek_bridge() -> Any:
+    """Return the configured sidecar bridge without connecting or reconnecting it."""
+    return _bridge
+
+
 def get_bridge():
     """Return the sidecar bridge when running outside ZBrush."""
     if _bridge is None:

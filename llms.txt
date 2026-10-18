@@ -89,6 +89,7 @@ MCP endpoint: `http://127.0.0.1:9765/mcp`
 |zbrush-viewport|capture_turntable|
 |zbrush-interchange|—|
 |zbrush-import-to-scene|import_to_scene|
+|zbrush-dialog|get_active_dialog, click_dialog_button|
 
 ## Health check
 
@@ -118,6 +119,7 @@ SocketBridge.connect()  # sends JSON-RPC ping → expects {"ok": true}
 |partial install|Receipt or managed payload drift|Fail closed; inspect the receipt and backup before retrying|
 |checksum mismatch|Payload is not the fixed official release asset|Do not bypass; select a fixed official version and retry|
 |subprocess fails|ZBrush Python VM does not support subprocess|Use execute_python skill instead|
+|Calls return ZBRUSH_BLOCKED or time out while ZBrush looks frozen|A modal note (popup) blocks the ZBrush main thread|load_skill zbrush-dialog, call get_active_dialog, then click_dialog_button; never resend the timed-out call|
 |ZBrush version < 2026.1|No Python SDK available|Upgrade to ZBrush 2026.1+|
 
 ## External docs
