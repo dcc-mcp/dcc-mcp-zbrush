@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.31](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.30...v0.2.31) (2026-10-24)
+
+
+### Features
+
+* add read-only GoZ snapshot candidate ([220c395](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/220c395de71a6648d0d1a86e7bb8ed1371b29e0c))
+
 ## [0.2.30](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.29...v0.2.30) (2026-10-18)
 
 
