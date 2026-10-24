@@ -263,10 +263,9 @@ def _dialog_result(
     message_lines: List[Dict[str, Any]], buttons: List[Dict[str, Any]], other_labels: List[str]
 ) -> Dict[str, Any]:
     message = "\n".join(item["text"] for item in message_lines)
-    # A single-button dialog offers no choice, so its wording alone is not a risk.
-    destructive = any(is_destructive_text(item["text"]) for item in buttons) or (
-        len(buttons) != 1 and is_destructive_text(message)
-    )
+    # OCR may miss another button. One recognized label does not make a
+    # destructive message safe to acknowledge without explicit approval.
+    destructive = is_destructive_text(message) or any(is_destructive_text(item["text"]) for item in buttons)
     if destructive:
         kind = "destructive_confirmation"
     else:
@@ -566,7 +565,7 @@ function run(argv) {
     var item = list.objectAtIndex(i);
     var pid = ObjC.unwrap(item.objectForKey('kCGWindowOwnerPID'));
     var owner = ObjC.unwrap(item.objectForKey('kCGWindowOwnerName')) || '';
-    if (wanted ? pid !== wanted : owner !== 'ZBrush') continue;
+    if (owner !== 'ZBrush' || (wanted && pid !== wanted)) continue;
     if (ObjC.unwrap(item.objectForKey('kCGWindowLayer')) !== 0) continue;
     var bounds = item.objectForKey('kCGWindowBounds');
     out.windows.push({
@@ -668,7 +667,6 @@ function topmostAt(point) {
   var list = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, $.kCGNullWindowID));
   for (var w = 0; w < list.count; w++) {
     var item = list.objectAtIndex(w);
-    if (ObjC.unwrap(item.objectForKey('kCGWindowLayer')) !== 0) continue;
     if (ObjC.unwrap(item.objectForKey('kCGWindowAlpha')) === 0) continue;
     var b = item.objectForKey('kCGWindowBounds');
     var x = ObjC.unwrap(b.objectForKey('X')), y = ObjC.unwrap(b.objectForKey('Y'));
