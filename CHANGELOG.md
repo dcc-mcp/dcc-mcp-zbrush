@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.32](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.31...v0.2.32) (2026-10-30)
+
+
+### Bug Fixes
+
+* **identity:** separate ZBrush SDK edition from host version in verify ([#104](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/104)) ([2f07e84](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/2f07e84eba501ef280f5ed7a33254a0c89c029c0)), closes [#103](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/103)
+
+
+### Documentation
+
+* refresh the generated DCC-MCP host matrix pointer ([cf12e9c](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/cf12e9ce1fbaa3e224da63b65f703244a1bb5a84))
+
 ## [0.2.31](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.30...v0.2.31) (2026-10-24)
 
 
