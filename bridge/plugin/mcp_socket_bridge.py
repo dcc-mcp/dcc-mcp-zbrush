@@ -169,6 +169,36 @@ def _import_zbc():
     return zbc
 
 
+# ── ZBrush SDK version / edition identity ────────────────────────────────
+# Mirrors dcc_mcp_zbrush._version_probe.read_sdk_version. This plugin is
+# vendored into ZBrush and may run without dcc-mcp-zbrush importable, so the
+# logic is duplicated here. Keep the two copies in step.
+#
+# Official ZBrush Python SDK (zbr_cmds_system.html):
+#   zbrush_info(0) -> ZBrush version number (float, e.g. 2026.0)
+#   zbrush_info(1) -> edition type (float): 0=Demo, 1=Beta, 2=Full Version
+# Index 1 is the EDITION, not a minor version component. Treating it as a minor
+# version reported a Full-edition ZBrush 2027.0.1 as "2027.2" and broke verify.
+_ZBRUSH_INFO_VERSION = 0
+_ZBRUSH_INFO_EDITION = 1
+
+
+def _format_sdk_version(value) -> str:
+    """Format ``zbrush_info(0)`` as a bounded canonical version string."""
+    text = f"{float(value):.3f}".rstrip("0").rstrip(".")
+    return f"{text}.0" if "." not in text else text
+
+
+def _read_sdk_version(zbc):
+    """Return ``(version_string, edition)``; never mix edition into version."""
+    version = _format_sdk_version(zbc.zbrush_info(_ZBRUSH_INFO_VERSION))
+    try:
+        edition = int(zbc.zbrush_info(_ZBRUSH_INFO_EDITION))
+    except (TypeError, ValueError):
+        edition = -1
+    return version, edition
+
+
 # ── OBJ face-size preflight ──────────────────────────────────────────────
 # Mirrors dcc_mcp_zbrush._obj_preflight. This plugin is vendored into ZBrush
 # and may run without dcc-mcp-zbrush importable, so the logic is duplicated
@@ -332,6 +362,12 @@ def _get_session_info() -> Dict[str, Any]:
             bridge_digest = hashlib.sha256(stream.read()).hexdigest()
     except OSError:
         bridge_digest = ""
+    sdk_version, sdk_edition = _read_sdk_version(zbc)
+    # The signed executable's ProductVersion recorded at install time is the
+    # authoritative, full-precision host version. The SDK version number
+    # (zbrush_info(0)) and the edition type (zbrush_info(1)) are reported
+    # separately; the edition is never a version component.
+    product_version = str(install_identity.get("zbrush_version") or "")
     return {
         "adapter_version": install_identity.get("adapter_version"),
         "bridge_instance_id": _BRIDGE_INSTANCE_ID,
@@ -342,7 +378,9 @@ def _get_session_info() -> Dict[str, Any]:
         "socket_endpoint": install_identity.get("socket_endpoint"),
         "selected_dcc_path": install_identity.get("dcc_path"),
         "selected_dcc_sha256": install_identity.get("dcc_sha256"),
-        "zbrush_version": f"{int(zbc.zbrush_info(0))}.{int(zbc.zbrush_info(1))}",
+        "zbrush_version": sdk_version,
+        "zbrush_edition": sdk_edition,
+        "zbrush_product_version": product_version,
         "zbrush_commands_origin": os.path.abspath(getattr(zbc, "__file__", "")),
         "active_tool_path": str(zbc.get_active_tool_path() or ""),
         "subtool_count": int(zbc.get_subtool_count()),
@@ -1234,13 +1272,15 @@ def _fallback_server_info() -> None:
     try:
         import zbrush.commands as zbc  # noqa: PLC0415
 
-        zb_version = f"{int(zbc.zbrush_info(0))}.{int(zbc.zbrush_info(1))}"
+        zb_version, zb_edition = _read_sdk_version(zbc)
+        edition_label = {0: "Demo", 1: "Beta", 2: "Full"}.get(zb_edition, "Unknown")
+        zb_display = f"{zb_version} ({edition_label} edition)"
     except Exception:
-        zb_version = "unknown"
+        zb_display = "unknown"
 
     msg = (
         "Instance UUID: unavailable in standalone plugin\n"
-        f"DCC: ZBrush {zb_version}\n"
+        f"DCC: ZBrush {zb_display}\n"
         f"ZBrush PID: {os.getpid()}\n"
         f"Gateway Port: {gateway_port}\n"
         f"Python: {sys.version.split()[0]}\n\n"

@@ -229,6 +229,39 @@ def _parse_host_version(value: str, *, stage: str = "host") -> tuple[int, ...]:
     return parts
 
 
+def _host_version_is_consistent(session: Mapping[str, Any], receipt: Mapping[str, Any]) -> bool:
+    """Bind the running host's version to the signed executable at normalized precision.
+
+    ``zbrush_version`` is the SDK version number from ``zbrush_info(0)``; it exposes
+    only the ZBrush major (year) precision. ``zbrush_product_version`` is the signed
+    executable's authoritative ProductVersion recorded at install time (full
+    precision). The edition type (``zbrush_info(1)``) is reported separately by the
+    host and is never a version component. The exact binary is independently pinned
+    by its SHA-256 digest elsewhere in ``host_identity`` verification.
+    """
+    try:
+        host = _parse_host_version(str(receipt.get("host_version") or ""))
+        sdk = _parse_host_version(str(session.get("zbrush_version") or ""))
+    except LifecycleFailure:
+        return False
+    # Normalize precision: compare the major (year) that both sources express with
+    # identical semantics. The executable's finer release/build components are not
+    # reported by the SDK, so they cannot be compared here.
+    if not host or not sdk or sdk[0] != host[0]:
+        return False
+    # When the host reports the authoritative executable ProductVersion, bind it at
+    # full precision as an additional strict check.
+    product_text = str(session.get("zbrush_product_version") or "")
+    if product_text:
+        try:
+            product = _parse_host_version(product_text)
+        except LifecycleFailure:
+            return False
+        if product != host:
+            return False
+    return True
+
+
 def _windows_product_info(path: Path) -> dict[str, str]:
     """Read Windows version-resource strings without trusting the path name."""
 
@@ -632,9 +665,7 @@ def _validate_sidecar_session(
         )
     if not _same_path(str(session.get("selected_dcc_path") or ""), str(receipt.get("dcc_path") or "")):
         raise LifecycleFailure(EXIT_VERIFY, "host_identity", "Loaded ZBrush executable path does not match the receipt")
-    runtime_version = _parse_host_version(str(session.get("zbrush_version") or ""))
-    receipt_version = _parse_host_version(str(receipt.get("host_version") or ""))
-    if runtime_version[:2] != receipt_version[:2]:
+    if not _host_version_is_consistent(session, receipt):
         raise LifecycleFailure(
             EXIT_VERIFY, "host_identity", "Running ZBrush version does not match the selected product"
         )
@@ -749,9 +780,7 @@ def _validate_embedded_readiness(
         str(session.get("selected_dcc_path") or ""), str(receipt.get("dcc_path") or "")
     ):
         raise LifecycleFailure(EXIT_VERIFY, "host_identity", "Embedded process is not bound to the selected product")
-    runtime_version = _parse_host_version(str(session.get("zbrush_version") or ""))
-    selected_version = _parse_host_version(str(receipt.get("host_version") or ""))
-    if runtime_version[:2] != selected_version[:2]:
+    if not _host_version_is_consistent(session, receipt):
         raise LifecycleFailure(EXIT_VERIFY, "host_identity", "Embedded ZBrush version does not match the product")
 
     mcp_url = str(entry.get("mcp_url") or "")

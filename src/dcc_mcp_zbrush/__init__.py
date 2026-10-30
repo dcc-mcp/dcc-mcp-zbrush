@@ -29,9 +29,11 @@ from dcc_mcp_zbrush._skill_loader import (
 )
 from dcc_mcp_zbrush._version_probe import (
     get_active_tool_path,
+    get_zbrush_edition,
     get_zbrush_version_string,
     get_zbrush_version_tuple,
     is_zbrush_available,
+    read_sdk_version,
 )
 from dcc_mcp_zbrush.api import (
     ZBrushNotAvailableError,
@@ -83,12 +85,14 @@ __all__ = [
     "get_active_tool_path",
     "get_bridge",
     "get_server",
+    "get_zbrush_edition",
     "get_zbrush_version_string",
     "get_zbrush_version_tuple",
     "import_zbc",
     "is_zbrush_available",
     "is_zb_available",
     "install_menu",
+    "read_sdk_version",
     "resolve_enable_gateway_failover",
     "resolve_minimal_mode_enabled",
     "resolve_mode",
