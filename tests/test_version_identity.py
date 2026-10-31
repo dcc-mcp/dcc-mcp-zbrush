@@ -77,6 +77,12 @@ class TestFormatSdkVersion:
     def test_preserves_precision_with_two_components(self, value: float, expected: str) -> None:
         assert format_sdk_version(value) == expected
 
+    def test_tiny_fraction_keeps_leading_zeros(self) -> None:
+        # zbrush_info(0) can carry a tiny fraction; "%.3f" renders a value such
+        # as 2027.001 as "2027.001". Those leading zeros are a float artifact,
+        # never a canonical product-version component. See GH-106.
+        assert format_sdk_version(2027.001) == "2027.001"
+
 
 class TestReadSdkVersion:
     @pytest.mark.parametrize(
@@ -165,6 +171,62 @@ class TestHostVersionIsConsistent:
     def test_missing_or_unbounded_version_is_rejected(self) -> None:
         receipt = {"host_version": "2027.0.1"}
         assert lifecycle._host_version_is_consistent({"zbrush_version": ""}, receipt) is False
+
+
+class TestSdkFloatVersionHostBinding:
+    """GH-106: an SDK float fraction with leading zeros must not roll back verify.
+
+    ``zbrush_info(0)`` is a float; ``format_sdk_version`` can render a tiny
+    fraction as ``2027.001``. That value is a float artifact, NOT the signed
+    executable's canonical ProductVersion, so it must not be fed through the
+    strict product-version parser that powers the identity gate. The signed
+    ProductVersion keeps its full-precision canonical binding.
+    """
+
+    @pytest.mark.parametrize(
+        ("sdk_version", "expected"),
+        [
+            ("2027.001", True),  # GH-106: reported leading-zero SDK fraction
+            ("2027.01", True),
+            ("2026.001", False),  # major (year) mismatch must still be rejected
+        ],
+    )
+    def test_leading_zero_sdk_fraction_when_product_version_absent(self, sdk_version: str, expected: bool) -> None:
+        receipt = {"host_version": "2027, 0, 1, 1"}  # signed ProductVersion
+        session = {
+            "zbrush_version": sdk_version,
+            "zbrush_edition": 2,
+            "zbrush_product_version": "",  # authoritative value not reported
+        }
+        assert lifecycle._host_version_is_consistent(session, receipt) is expected
+
+    def test_leading_zero_sdk_fraction_with_strict_product_version(self) -> None:
+        receipt = {"host_version": "2027, 0, 1, 1"}
+        session = {
+            "zbrush_version": "2027.001",
+            "zbrush_edition": 2,
+            "zbrush_product_version": "2027, 0, 1, 1",
+        }
+        assert lifecycle._host_version_is_consistent(session, receipt) is True
+
+    @pytest.mark.parametrize(
+        "bad_sdk",
+        ["", "unknown", "2027.001abc", "02027.0", "99999999.0", "2027/0/1"],
+    )
+    def test_malformed_sdk_version_is_still_rejected(self, bad_sdk: str) -> None:
+        receipt = {"host_version": "2027, 0, 1, 1"}
+        session = {"zbrush_version": bad_sdk, "zbrush_product_version": ""}
+        assert lifecycle._host_version_is_consistent(session, receipt) is False
+
+    @pytest.mark.parametrize(
+        "bad_product",
+        ["2027.001", "2027.0001", "2027, 0, 1, 1, 1", "02027.0"],
+    )
+    def test_signed_product_version_parser_stays_strict(self, bad_product: str) -> None:
+        # The canonical signed-ProductVersion parser must NOT be loosened: a
+        # leading-zero component or an over-shape value is still rejected.
+        with pytest.raises(lifecycle.LifecycleFailure):
+            lifecycle._parse_host_version(bad_product)
 
 
 class TestBridgeSessionInfo:
