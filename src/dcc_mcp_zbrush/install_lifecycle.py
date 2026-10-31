@@ -211,6 +211,7 @@ def _parse_version(value: str, *, stage: str, components: int = 3) -> tuple[int,
 
 
 _HOST_VERSION_SEPARATORS = re.compile(r"[.,]\s*")
+_SDK_VERSION_MAJOR_RE = re.compile(r"(?:0|[1-9]\d{0,5})(?:\.\d{1,6}){0,3}")
 
 
 def _parse_host_version(value: str, *, stage: str = "host") -> tuple[int, ...]:
@@ -229,6 +230,23 @@ def _parse_host_version(value: str, *, stage: str = "host") -> tuple[int, ...]:
     return parts
 
 
+def _parse_sdk_version_major(value: str, *, stage: str = "host") -> int:
+    """Return the major (year) from the SDK float-derived version string.
+
+    ``zbrush_info(0)`` is a float; ``format_sdk_version`` renders it as
+    ``MAJOR.fraction`` (for example ``2027.001``). The fraction is a float
+    artifact whose leading zeros are legitimate, so it must NOT be parsed as a
+    canonical product-version component. Only the integer major is used for
+    host binding; the authoritative signed-executable ProductVersion is parsed
+    separately and strictly by ``_parse_host_version``.
+    """
+    if not isinstance(value, str) or len(value) > 64:
+        raise LifecycleFailure(EXIT_PREFLIGHT, stage, "ZBrush SDK version is not bounded")
+    if _SDK_VERSION_MAJOR_RE.fullmatch(value.strip()) is None:
+        raise LifecycleFailure(EXIT_PREFLIGHT, stage, f"ZBrush SDK version is not a bounded decimal: {value}")
+    return int(value.strip().split(".", 1)[0])
+
+
 def _host_version_is_consistent(session: Mapping[str, Any], receipt: Mapping[str, Any]) -> bool:
     """Bind the running host's version to the signed executable at normalized precision.
 
@@ -241,13 +259,16 @@ def _host_version_is_consistent(session: Mapping[str, Any], receipt: Mapping[str
     """
     try:
         host = _parse_host_version(str(receipt.get("host_version") or ""))
-        sdk = _parse_host_version(str(session.get("zbrush_version") or ""))
+        # The SDK value is a float-derived string, not a canonical product version.
+        # Parse only its integer major; never feed the float fraction through the
+        # strict signed-ProductVersion parser (which rejects leading zeros).
+        sdk_major = _parse_sdk_version_major(str(session.get("zbrush_version") or ""))
     except LifecycleFailure:
         return False
     # Normalize precision: compare the major (year) that both sources express with
     # identical semantics. The executable's finer release/build components are not
     # reported by the SDK, so they cannot be compared here.
-    if not host or not sdk or sdk[0] != host[0]:
+    if not host or sdk_major != host[0]:
         return False
     # When the host reports the authoritative executable ProductVersion, bind it at
     # full precision as an additional strict check.
