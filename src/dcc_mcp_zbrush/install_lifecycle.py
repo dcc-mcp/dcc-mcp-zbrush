@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import logging
 import os
 import plistlib
 import re
@@ -33,6 +34,8 @@ from urllib.parse import unquote, urlparse
 from urllib.request import Request, url2pathname, urlopen
 
 from dcc_mcp_zbrush.__version__ import __version__
+
+logger = logging.getLogger(__name__)
 
 ADAPTER = "zbrush"
 SCHEMA_VERSION = 1
@@ -211,7 +214,26 @@ def _parse_version(value: str, *, stage: str, components: int = 3) -> tuple[int,
 
 
 _HOST_VERSION_SEPARATORS = re.compile(r"[.,]\s*")
-_SDK_VERSION_MAJOR_RE = re.compile(r"(?:0|[1-9]\d{0,5})(?:\.\d{1,6}){0,3}")
+# format_sdk_version() renders zbrush_info(0) with a single decimal point at
+# most ("2026.2", "2027.001"). Accept only that genuine SDK shape: a value with
+# two or more dots is an unknown format (e.g. a ProductVersion mislabeled as the
+# SDK value) and must not be silently reduced to its major.
+_SDK_VERSION_MAJOR_RE = re.compile(r"(?:0|[1-9]\d{0,5})(?:\.\d{1,6})?")
+
+
+def _redact_version_diagnostic(value: str) -> str:
+    """Return a bounded, desensitized snapshot of an untrusted version string.
+
+    Session-provided version values are untrusted. Cap the length and escape
+    non-printable / control characters so an operator can tell *why* an unknown
+    format was refused without raw bytes or unbounded payloads leaking into
+    logs or reports. The raw value is never accepted by the verifier.
+    """
+    text = str(value)[:48]
+    # Escape each non-printable byte, then bound the *emitted* length too: a
+    # "\\xNN" escape is 4 chars, so input capping alone can still expand.
+    escaped = "".join(ch if ch.isprintable() else f"\\x{ord(ch):02x}" for ch in text)
+    return escaped[:48]
 
 
 def _parse_host_version(value: str, *, stage: str = "host") -> tuple[int, ...]:
@@ -243,7 +265,13 @@ def _parse_sdk_version_major(value: str, *, stage: str = "host") -> int:
     if not isinstance(value, str) or len(value) > 64:
         raise LifecycleFailure(EXIT_PREFLIGHT, stage, "ZBrush SDK version is not bounded")
     if _SDK_VERSION_MAJOR_RE.fullmatch(value.strip()) is None:
-        raise LifecycleFailure(EXIT_PREFLIGHT, stage, f"ZBrush SDK version is not a bounded decimal: {value}")
+        # Keep a desensitized original for diagnostics; never echo raw bytes and
+        # never accept the unknown format (the caller fails closed).
+        raise LifecycleFailure(
+            EXIT_PREFLIGHT,
+            stage,
+            f"ZBrush SDK version has an unknown format: {_redact_version_diagnostic(value)!r}",
+        )
     return int(value.strip().split(".", 1)[0])
 
 
@@ -259,11 +287,17 @@ def _host_version_is_consistent(session: Mapping[str, Any], receipt: Mapping[str
     """
     try:
         host = _parse_host_version(str(receipt.get("host_version") or ""))
-        # The SDK value is a float-derived string, not a canonical product version.
-        # Parse only its integer major; never feed the float fraction through the
-        # strict signed-ProductVersion parser (which rejects leading zeros).
-        sdk_major = _parse_sdk_version_major(str(session.get("zbrush_version") or ""))
     except LifecycleFailure:
+        return False
+    # The SDK value is a float-derived string, not a canonical product version.
+    # Parse only its integer major; never feed the float fraction through the
+    # strict signed-ProductVersion parser (which rejects leading zeros).
+    try:
+        sdk_major = _parse_sdk_version_major(str(session.get("zbrush_version") or ""))
+    except LifecycleFailure as exc:
+        # Preserve a desensitized diagnostic for an unknown SDK format, but stay
+        # fail-closed: an unrecognized shape is never accepted as a match.
+        logger.warning("host_identity: %s", exc.reason)
         return False
     # Normalize precision: compare the major (year) that both sources express with
     # identical semantics. The executable's finer release/build components are not
