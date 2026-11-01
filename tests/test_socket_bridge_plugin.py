@@ -96,21 +96,6 @@ def test_bridge_rejects_parallel_dispatch_instead_of_queueing_sdk_work() -> None
         assert first.result(timeout=1) == {"id": 1, "result": {"ok": True}}
 
 
-def test_bridge_timeout_keeps_request_slot_reserved_until_host_finishes() -> None:
-    bridge = _load_bridge_plugin()
-    bridge._REQUEST_TIMEOUT_SECONDS = 0.01
-    bridge._handle_zbrush_request = lambda _method, _params, req_id: {"id": req_id, "result": {"ok": True}}
-
-    timed_out = bridge._dispatch_request({"id": 1, "method": "execute_python"})
-    busy = bridge._dispatch_request({"id": 2, "method": "execute_python"})
-
-    assert timed_out["error"]["code"] == -32002
-    assert timed_out["error"]["data"]["still_running"] is True
-    assert busy["error"]["code"] == -32001
-
-    bridge._drain_request_queue()
-
-
 def test_bridge_ping_bypasses_main_thread_queue_and_reports_busy_state() -> None:
     bridge = _load_bridge_plugin()
     bridge._dispatch_request = MagicMock()

@@ -213,6 +213,11 @@ class SocketBridge:
 
     def _call_once(self, method: str, **params: Any) -> Any:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        # Carry the caller's wall-clock deadline across a delayed TCP accept. The
+        # plugin drops requests already expired in the kernel backlog before the
+        # main-thread pump starts host work; older plugins ignore this field.
+        if method != "ping":
+            payload["deadline_unix_ms"] = (time.time() + self._timeout) * 1000
         try:
             raw = self._send(json.dumps(payload).encode("utf-8"))
         except OSError:
