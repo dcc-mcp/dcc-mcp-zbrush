@@ -46,11 +46,18 @@ The adapter surfaces `ZBRUSH_BUSY` (-32001), the existing
 `ZBRUSH_REQUEST_EXPIRED` (-32004, `executed: false`). The client classifies a
 lost, empty, or malformed reply to a submitted method as `-32002` with
 `execution_state: "unknown"` and `retryable: false`, so a possibly
-side-effecting call is never replayed blindly. An unresponsive host is
-classified by `probe()` and reported as `ZBRUSH_BLOCKED` (via
-`ZBrushBlockedError`), not by the retired `ZBRUSH_UNRESPONSIVE` (-32003)
-mapping, which has no live producer. A timeout is never evidence that an
-already-started operation did not modify the scene.
+side-effecting call is never replayed blindly. The same classification applies
+to a connection-level failure (reset, abort, broken pipe, or EOF) that occurs
+*after* the request is on the wire: `SocketBridge._send` records whether the
+TCP connection was established before the error, so only a failure before any
+byte is sent is reported as unreachable, while a post-send failure is
+`-32002 execution_state=unknown, retryable=false` and is never surfaced as a
+bare transport error that invites an automatic retry. `probe()` likewise
+treats a reset after the connection was accepted as `blocked`, not
+`unreachable`. An unresponsive host is classified by `probe()` and reported as
+`ZBRUSH_BLOCKED` (via `ZBrushBlockedError`), not by the retired
+`ZBRUSH_UNRESPONSIVE` (-32003) mapping, which has no live producer. A timeout
+is never evidence that an already-started operation did not modify the scene.
 
 ## Important limitations
 

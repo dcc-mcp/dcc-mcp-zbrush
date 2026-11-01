@@ -74,6 +74,27 @@ class ZBrushNotAvailableError(ConnectionError):
     """Raised when the ZBrush socket plugin is not reachable."""
 
 
+# ``_send`` marks any exception raised *after* the TCP connection is established
+# (i.e. during sendall/recv). At that point the request may already be on the
+# wire, so the host may be running it and the outcome is unknown. A failure from
+# ``socket.create_connection`` (before a single byte is sent) is left unmarked,
+# so callers can still diagnose "not submitted / nothing listening" correctly.
+# The stage is recorded on the exception itself, so no inference from the
+# exception's type is needed and ``probe()`` and ``_call_once`` stay in sync.
+_POST_CONNECT_STAGE = "_zbrush_post_connect"
+
+
+def _mark_post_connect(exc: BaseException) -> None:
+    try:
+        setattr(exc, _POST_CONNECT_STAGE, True)
+    except Exception:  # pragma: no cover - exotic exception without __dict__
+        pass
+
+
+def _is_post_connect(exc: BaseException) -> bool:
+    return bool(getattr(exc, _POST_CONNECT_STAGE, False))
+
+
 class SocketBridge:
     """Minimal TCP JSON-RPC client for the ZBrush MCP socket plugin."""
 
@@ -133,6 +154,17 @@ class SocketBridge:
             raw = self._send(json.dumps(payload).encode("utf-8"), timeout=timeout)
             message = json.loads(raw.decode("utf-8"))
         except _UNREACHABLE_ERRORS as exc:
+            # A reset *after* the connection was accepted means the plugin is
+            # present but the main thread did not answer. Report blocked, not
+            # "nothing is listening": both must never invite an automatic retry.
+            if _is_post_connect(exc):
+                return {
+                    "status": STATUS_BLOCKED,
+                    "message": _BLOCKED_DETAIL,
+                    "endpoint": self.endpoint,
+                    "timeout_sec": timeout,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
             return {
                 "status": STATUS_UNREACHABLE,
                 "message": (
@@ -241,11 +273,17 @@ class SocketBridge:
             if submitted:
                 raise unknown_outcome(f"{type(exc).__name__}: {exc}") from exc
             raise
-        except OSError:
-            # A connection-level failure (refused/reset/closed) means no reply
-            # was formed; keep the transport error bare so the "unavailable"
-            # classification and connection bookkeeping from #95 stay intact.
+        except OSError as exc:
+            # A failure *before* the connection is established proves no byte
+            # reached the host: keep it bare so #95's transport bookkeeping and
+            # the "unreachable / nothing listening" diagnosis stay intact. But
+            # once connected, the request may already be on the wire (sendall
+            # can even partially send), so any OSError during send/recv means
+            # the host may be running it. Classify that as an unknown,
+            # non-retryable outcome instead of a bare "try again" error.
             self._connected = False
+            if submitted and _is_post_connect(exc):
+                raise unknown_outcome(f"{type(exc).__name__}: {exc}") from exc
             raise
         try:
             message = json.loads(raw.decode("utf-8"))
@@ -305,19 +343,29 @@ class SocketBridge:
         # The timeout is a parameter, never instance state: probes and normal
         # calls run concurrently, and temporarily rewriting self._timeout would
         # let one path hand the other a 3-second deadline (or leak it for good).
-        with socket.create_connection(
+        #
+        # Keep connect() outside the guarded block: a failure here proves no
+        # byte reached the host. Everything from sendall onward is *on the
+        # wire*; any exception there is marked so _call_once()/probe() can
+        # treat the request as possibly submitted instead of guessing by type.
+        sock = socket.create_connection(
             (self._host, self._port),
             timeout=self._timeout if timeout is None else timeout,
-        ) as sock:
-            sock.sendall(data + b"\n")
+        )
+        with sock:
             chunks: list[bytes] = []
-            while True:
-                part = sock.recv(65536)
-                if not part:
-                    break
-                chunks.append(part)
-                if b"\n" in part:
-                    break
+            try:
+                sock.sendall(data + b"\n")
+                while True:
+                    part = sock.recv(65536)
+                    if not part:
+                        break
+                    chunks.append(part)
+                    if b"\n" in part:
+                        break
+            except Exception as exc:
+                _mark_post_connect(exc)
+                raise
         return b"".join(chunks).split(b"\n", 1)[0]
 
     def __enter__(self) -> "SocketBridge":
