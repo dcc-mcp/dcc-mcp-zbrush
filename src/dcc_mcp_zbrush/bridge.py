@@ -216,16 +216,46 @@ class SocketBridge:
         # Carry the caller's wall-clock deadline across a delayed TCP accept. The
         # plugin drops requests already expired in the kernel backlog before the
         # main-thread pump starts host work; older plugins ignore this field.
-        if method != "ping":
+        submitted = method != "ping"
+        if submitted:
             payload["deadline_unix_ms"] = (time.time() + self._timeout) * 1000
+
+        def unknown_outcome(reason: str) -> ZBrushBridgeError:
+            # Once a real method is on the wire the host may already be running
+            # it. A lost or malformed reply leaves the outcome unknown: replaying
+            # a possibly side-effecting call is unsafe, so mark -32002 explicitly
+            # non-retryable with execution_state=unknown.
+            return ZBrushBridgeError(
+                f"Lost or invalid ZBrush response after submitting {method}: {reason}. "
+                "The outcome is unknown; inspect ZBrush before retrying.",
+                code=-32002,
+                data={"retryable": False, "execution_state": "unknown", "active_method": method},
+            )
+
         try:
             raw = self._send(json.dumps(payload).encode("utf-8"))
+        except (TimeoutError, socket.timeout) as exc:
+            # The host stopped answering (or a dialog/native call holds it) after
+            # the request was sent: its work may still be in flight.
+            self._connected = False
+            if submitted:
+                raise unknown_outcome(f"{type(exc).__name__}: {exc}") from exc
+            raise
         except OSError:
+            # A connection-level failure (refused/reset/closed) means no reply
+            # was formed; keep the transport error bare so the "unavailable"
+            # classification and connection bookkeeping from #95 stay intact.
             self._connected = False
             raise
         try:
             message = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError as exc:
+            if not isinstance(message, dict) or not ({"result", "error"} & message.keys()):
+                raise ValueError(f"not a JSON-RPC object: {raw!r}")
+        except ValueError as exc:  # JSONDecodeError / UnicodeDecodeError / guard
+            # EOF, truncated, invalid UTF-8, or a non-object reply: the host got
+            # the request but we cannot tell whether it ran. Unknown outcome.
+            if submitted:
+                raise unknown_outcome(str(exc)) from exc
             raise ZBrushBridgeError(f"Invalid JSON from ZBrush plugin: {raw!r}") from exc
 
         if "error" in message:

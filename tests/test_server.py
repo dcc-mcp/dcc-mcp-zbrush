@@ -77,6 +77,32 @@ def test_get_bridge_reconnects_retained_sidecar():
     bridge.connect.assert_called_once_with()
 
 
+def test_get_bridge_preserves_blocked_verdict_on_reconnect(monkeypatch):
+    """A blocked verdict on reconnect must reach ZBRUSH_BLOCKED, not be lost."""
+    from dcc_mcp_zbrush import api
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBlockedError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    bridge._connected = False  # force the get_bridge() reconnect path
+    verdict = {
+        "status": "blocked",
+        "message": "ZBrush main thread is inside a native call",
+        "endpoint": bridge.endpoint,
+        "timeout_sec": 3.0,
+    }
+    monkeypatch.setattr(bridge, "connect", MagicMock(side_effect=ZBrushBlockedError("stuck", detail=verdict)))
+    monkeypatch.setattr(api, "_bridge", bridge)
+
+    @api.with_zbrush
+    def reconnect_then_call(**_kwargs):
+        return api.get_bridge().call("execute_python", code="x=1")
+
+    result = reconnect_then_call()
+    assert result["error"] == "ZBRUSH_BLOCKED"
+    assert "Do not retry automatically" in result["prompt"]
+    assert result["context"]["blocked"]["status"] == "blocked"
+
+
 def test_resolve_mode_defaults_to_sidecar_outside_zbrush():
     from dcc_mcp_zbrush._env import resolve_mode
 
@@ -152,6 +178,27 @@ def test_bridge_busy_error_remains_retryable_at_tool_boundary(monkeypatch):
     assert result["error"] == "ZBRUSH_BUSY"
     assert result["context"]["retryable"] is True
     assert result["context"]["active_method"] == "execute_python"
+
+
+def test_unknown_outcome_is_not_retryable_at_tool_boundary(monkeypatch):
+    """A lost reply after submit stays unknown and non-retryable at the boundary."""
+    from dcc_mcp_zbrush import api
+    from dcc_mcp_zbrush.bridge import SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    bridge._connected = True
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=TimeoutError("no reply")))
+    monkeypatch.setattr(api, "_bridge", bridge)
+
+    @api.with_zbrush
+    def call_lost(**_kwargs):
+        return api.get_bridge().call("execute_python", code="x=1")
+
+    result = call_lost()
+    assert result["error"] == "ZBRUSH_TIMEOUT_STILL_RUNNING"
+    assert result["context"]["execution_state"] == "unknown"
+    assert result["context"]["retryable"] is False
+    assert "Inspect ZBrush before retrying" in result["prompt"]
 
 
 def _ping_reply(busy: bool = False, active_method=None) -> bytes:
