@@ -1622,6 +1622,53 @@ def test_preflight_accepts_comma_separated_windows_product_version(
     assert result["detected"]["zbrush_version"] == "2026, 2, 1, 1"
 
 
+@pytest.mark.parametrize("edition", [0, 1, 2])
+def test_gh103_full_edition_host_does_not_roll_back_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, edition: int
+) -> None:
+    """A correctly signed host must verify regardless of SDK edition (GH-103).
+
+    The fixed bridge reports the SDK version number, the edition type and the
+    signed executable's ProductVersion separately. Before the fix, the edition
+    was used as a version minor component and ``host_identity`` rolled back the
+    candidate with exit code 40.
+    """
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    request = _request(tmp_path)
+    archive = tmp_path / "plugin.zip"
+    digest = _build_sidecar_archive(archive)
+    _receipt, session = _pending_sidecar(request, archive, digest)
+    session["zbrush_version"] = "2026.0"  # zbrush_info(0), precision preserved
+    session["zbrush_edition"] = edition
+    session["zbrush_product_version"] = "2026.1.0.0"  # signed exe ProductVersion
+    _bind_sidecar(monkeypatch, request, session)
+
+    verified = lifecycle.run_lifecycle(replace(request, operation="verify"))
+
+    assert verified["exit_code"] == 0
+    assert verified["directly_usable"] is True
+
+
+def test_gh103_legacy_buggy_version_string_no_longer_rolls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy bridge still reporting MAJOR.EDITION verifies once it reports the exe ProductVersion."""
+    import dcc_mcp_zbrush.install_lifecycle as lifecycle
+
+    request = _request(tmp_path)
+    archive = tmp_path / "plugin.zip"
+    digest = _build_sidecar_archive(archive)
+    _receipt, session = _pending_sidecar(request, archive, digest)
+    session["zbrush_version"] = "2026.2"  # old buggy "MAJOR.EDITION" output
+    session["zbrush_product_version"] = "2026.1.0.0"
+    _bind_sidecar(monkeypatch, request, session)
+
+    verified = lifecycle.run_lifecycle(replace(request, operation="verify"))
+
+    assert verified["exit_code"] == 0
+
+
 def _verify_sidecar_with_origin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

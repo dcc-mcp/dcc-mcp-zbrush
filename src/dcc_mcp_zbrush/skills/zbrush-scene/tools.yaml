@@ -5,7 +5,7 @@ tools:
       index without modifying the scene.
     source_file: scripts/get_scene_info.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       read_only_hint: true
@@ -24,7 +24,7 @@ tools:
       visibility/lock flags from get_subtool_status.
     source_file: scripts/list_subtools.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       read_only_hint: true

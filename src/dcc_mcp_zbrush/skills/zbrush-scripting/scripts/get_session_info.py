@@ -11,6 +11,7 @@ from pathlib import Path
 from dcc_mcp_core.skill import skill_entry
 
 import dcc_mcp_zbrush
+from dcc_mcp_zbrush._version_probe import read_sdk_version
 from dcc_mcp_zbrush.api import with_zbrush, zb_success
 
 
@@ -40,11 +41,18 @@ def _collect(zbc) -> dict:
         server = dcc_mcp_zbrush.get_server()
     except Exception:
         server = None
+    sdk_version, sdk_edition = read_sdk_version(zbc)
+    # The signed executable's ProductVersion recorded at install time is the
+    # authoritative host version. Keep the SDK version number and the edition
+    # type separate; the edition (zbrush_info(1)) is never a version component.
+    product_version = str(identity.get("zbrush_version") or "")
     return {
         "adapter_module_path": str(adapter_path),
         "adapter_module_sha256": _sha256(adapter_path),
         "adapter_version": dcc_mcp_zbrush.__version__,
-        "zbrush_version": f"{int(zbc.zbrush_info(0))}.{int(zbc.zbrush_info(1))}",
+        "zbrush_version": sdk_version,
+        "zbrush_edition": sdk_edition,
+        "zbrush_product_version": product_version,
         "zbrush_commands_origin": str(Path(zbrush_origin).resolve()) if zbrush_origin else "",
         "install_id": identity.get("install_id"),
         "selected_dcc_path": identity.get("dcc_path"),

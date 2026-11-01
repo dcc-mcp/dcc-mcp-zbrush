@@ -1,4 +1,12 @@
-"""Transport/queue regression tests; these do not reproduce a native ZBrush modal."""
+"""Plugin queue-deadline regression tests; these do not reproduce a native ZBrush modal.
+
+Covers the in-ZBrush main-thread pump: wire-deadline admission, monotonic queue
+expiry, cancelled tombstones, busy/unknown outcomes, and abort safety. A client
+that omits ``deadline_unix_ms`` still gets the plugin's local queue timeout, so
+these guards do not depend on a particular sidecar client. The client's
+blocked-host classification (``probe`` / ``ZBrushBlockedError``) and busy-retry
+behaviour are covered by ``tests/test_server.py``.
+"""
 
 from __future__ import annotations
 
@@ -105,114 +113,6 @@ def test_invalid_deadlines_fail_closed():
     assert plugin._REQUEST_QUEUE.empty()
 
 
-def test_client_does_not_submit_host_work_when_ping_times_out(monkeypatch):
-    import json
-
-    import pytest
-
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
-
-    bridge = SocketBridge(timeout=10, probe_timeout=0.05)
-    sent = []
-
-    def send(data, *, timeout):
-        sent.append((json.loads(data), timeout))
-        raise TimeoutError()
-
-    monkeypatch.setattr(bridge, "_send", send)
-    with pytest.raises(ZBrushBridgeError) as caught:
-        bridge.call("execute_python", code="side_effect()")
-    assert [payload["method"] for payload, _ in sent] == ["ping"]
-    assert sent[0][1] == 0.05
-    assert caught.value.code == -32003
-    assert caught.value.data == {"retryable": True, "submitted": False, "state": "unresponsive"}
-
-
-def test_busy_preflight_does_not_submit_and_recovers_without_latching(monkeypatch):
-    import json
-
-    import pytest
-
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
-
-    bridge = SocketBridge()
-    sent = []
-    busy = True
-
-    def send(data, **_kwargs):
-        payload = json.loads(data)
-        sent.append(payload)
-        result = {"ok": True, "busy": busy} if payload["method"] == "ping" else {"success": True}
-        return json.dumps({"result": result}).encode()
-
-    monkeypatch.setattr(bridge, "_send", send)
-    with pytest.raises(ZBrushBridgeError) as caught:
-        bridge.call("execute_python")
-    assert caught.value.code == -32001
-    assert len(sent) == 1
-    busy = False
-    assert bridge.call("execute_python") == {"success": True}
-    assert [payload["method"] for payload in sent] == ["ping", "ping", "execute_python"]
-    assert sent[-1]["deadline_unix_ms"] > time.time() * 1000
-
-
-def test_lost_response_after_submit_has_unknown_nonretryable_outcome(monkeypatch):
-    import json
-
-    import pytest
-
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
-
-    bridge = SocketBridge()
-
-    def send(data, **_kwargs):
-        if json.loads(data)["method"] == "ping":
-            return b'{"result":{"ok":true,"busy":false}}'
-        raise TimeoutError()
-
-    monkeypatch.setattr(bridge, "_send", send)
-    with pytest.raises(ZBrushBridgeError) as caught:
-        bridge.call("execute_python")
-    assert caught.value.code == -32002
-    assert caught.value.data["execution_state"] == "unknown"
-    assert caught.value.data["retryable"] is False
-
-
-def test_real_tcp_blackhole_accepts_connection_but_preflight_stays_bounded():
-    import json
-    import socket
-
-    import pytest
-
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
-
-    received = []
-    release = threading.Event()
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        listener.listen()
-        listener.settimeout(2)
-
-        def peer():
-            with listener.accept()[0] as conn:
-                received.append(json.loads(conn.recv(65536)))
-                release.wait(2)
-
-        thread = threading.Thread(target=peer)
-        thread.start()
-        bridge = SocketBridge(port=listener.getsockname()[1], timeout=3, probe_timeout=0.1)
-        started = time.monotonic()
-        try:
-            with pytest.raises(ZBrushBridgeError) as caught:
-                bridge.call("execute_python", code="side_effect()")
-            assert caught.value.code == -32003
-            assert time.monotonic() - started < 1.5
-        finally:
-            release.set()
-            thread.join(2)
-        assert [payload["method"] for payload in received] == ["ping"]
-
-
 def test_real_tcp_delayed_accept_discards_expired_host_work():
     import json
     import socket
@@ -256,58 +156,24 @@ def test_aborted_started_request_releases_waiter_and_busy_slot():
     assert plugin._ACTIVE_REQUEST is None
 
 
-def test_invalid_response_after_submit_is_unknown_and_nonretryable(monkeypatch):
+def test_client_attaches_wire_deadline_to_host_calls(monkeypatch):
     import json
 
-    import pytest
+    from dcc_mcp_zbrush.bridge import SocketBridge
 
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+    bridge = SocketBridge(timeout=10)
+    sent = []
 
-    for invalid in (b"", b"{", b"\xff", b"[]", b"{}"):
-        bridge = SocketBridge()
+    def send(data, **_kwargs):
+        sent.append(json.loads(data))
+        return b'{"result":{"ok":true}}'
 
-        def send(data, **_kwargs):
-            return b'{"result":{"ok":true}}' if json.loads(data)["method"] == "ping" else invalid
+    monkeypatch.setattr(bridge, "_send", send)
+    assert bridge.call("execute_python", code="x = 1") == {"ok": True}
+    assert [p["method"] for p in sent] == ["execute_python"]
+    assert sent[0]["deadline_unix_ms"] > time.time() * 1000
 
-        monkeypatch.setattr(bridge, "_send", send)
-        with pytest.raises(ZBrushBridgeError) as caught:
-            bridge.call("execute_python")
-        assert caught.value.code == -32002
-        assert caught.value.data["execution_state"] == "unknown"
-        assert caught.value.data["retryable"] is False
-
-
-def test_real_tcp_eof_after_submit_is_unknown_not_safe_to_retry():
-    import json
-    import socket
-
-    import pytest
-
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
-
-    received = []
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        listener.listen()
-        listener.settimeout(2)
-
-        def peer():
-            with listener.accept()[0] as conn:
-                received.append(json.loads(conn.recv(65536)))
-                conn.sendall(b'{"result":{"ok":true,"busy":false}}\n')
-            with listener.accept()[0] as conn:
-                received.append(json.loads(conn.recv(65536)))
-                # The operation may have had side effects before losing its reply.
-
-        thread = threading.Thread(target=peer)
-        thread.start()
-        try:
-            bridge = SocketBridge(port=listener.getsockname()[1], timeout=1)
-            with pytest.raises(ZBrushBridgeError) as caught:
-                bridge.call("execute_python")
-            assert caught.value.code == -32002
-            assert caught.value.data["execution_state"] == "unknown"
-            assert caught.value.data["retryable"] is False
-        finally:
-            thread.join(2)
-        assert [payload["method"] for payload in received] == ["ping", "execute_python"]
+    # The SDK-free ping carries no host-work deadline.
+    sent.clear()
+    assert bridge.call("ping") == {"ok": True}
+    assert "deadline_unix_ms" not in sent[0]

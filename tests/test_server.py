@@ -97,7 +97,7 @@ def test_socket_bridge_ping(monkeypatch):
 
     bridge = SocketBridge(host="127.0.0.1", port=9876)
 
-    def fake_send(data: bytes, **_kwargs) -> bytes:
+    def fake_send(data: bytes, timeout: float | None = None) -> bytes:
         payload = json.loads(data.decode("utf-8"))
         assert payload["method"] == "ping"
         return json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}).encode("utf-8")
@@ -108,13 +108,13 @@ def test_socket_bridge_ping(monkeypatch):
 
 
 def test_socket_bridge_transport_failure_clears_connection(monkeypatch):
-    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+    from dcc_mcp_zbrush.bridge import SocketBridge
 
     bridge = SocketBridge(host="127.0.0.1", port=9876)
     bridge._connected = True
     monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionError("gone")))
 
-    with pytest.raises(ZBrushBridgeError, match="unavailable"):
+    with pytest.raises(ConnectionError, match="gone"):
         bridge.call("get_session_info")
 
     assert bridge.is_connected() is False
@@ -135,7 +135,7 @@ def test_bridge_busy_error_remains_retryable_at_tool_boundary(monkeypatch):
             "data": {"retryable": True, "active_method": "execute_python"},
         },
     }
-    monkeypatch.setattr(bridge, "_send", lambda _data, **_kwargs: json.dumps(response).encode("utf-8"))
+    monkeypatch.setattr(bridge, "_send", lambda _data: json.dumps(response).encode("utf-8"))
 
     with pytest.raises(ZBrushBridgeError) as caught:
         bridge.call("get_scene_info")
@@ -152,6 +152,313 @@ def test_bridge_busy_error_remains_retryable_at_tool_boundary(monkeypatch):
     assert result["error"] == "ZBRUSH_BUSY"
     assert result["context"]["retryable"] is True
     assert result["context"]["active_method"] == "execute_python"
+
+
+def _ping_reply(busy: bool = False, active_method=None) -> bytes:
+    return json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "result": {"ok": True, "busy": busy, "active_method": active_method}}
+    ).encode("utf-8")
+
+
+def test_probe_reports_ready_when_zbrush_answers_idle(monkeypatch):
+    from dcc_mcp_zbrush.bridge import STATUS_READY, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", lambda _data, **_kw: _ping_reply(busy=False))
+
+    verdict = bridge.probe()
+
+    assert verdict["status"] == STATUS_READY
+    assert verdict["endpoint"] == "127.0.0.1:9876"
+
+
+def test_probe_reports_busy_when_a_request_is_in_flight(monkeypatch):
+    from dcc_mcp_zbrush.bridge import STATUS_BUSY, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", lambda _data, **_kw: _ping_reply(busy=True, active_method="execute_python"))
+
+    verdict = bridge.probe()
+
+    assert verdict["status"] == STATUS_BUSY
+    assert verdict["active_method"] == "execute_python"
+
+
+def test_probe_reports_blocked_when_zbrush_stops_answering(monkeypatch):
+    from dcc_mcp_zbrush.bridge import STATUS_BLOCKED, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=TimeoutError("no reply")))
+
+    verdict = bridge.probe()
+
+    assert verdict["status"] == STATUS_BLOCKED
+    # The verdict must not claim a dialog: a long native call looks the same.
+    assert "not proof of a dialog" in verdict["message"]
+
+
+def test_probe_uses_the_short_timeout(monkeypatch):
+    from dcc_mcp_zbrush.bridge import PING_TIMEOUT_SEC, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    seen = {}
+
+    def fake_send(_data, timeout=None):
+        seen["timeout"] = timeout
+        return _ping_reply()
+
+    monkeypatch.setattr(bridge, "_send", fake_send)
+    bridge.probe()
+
+    assert seen["timeout"] == PING_TIMEOUT_SEC
+    assert PING_TIMEOUT_SEC < SocketBridge(host="127.0.0.1")._timeout
+
+
+def test_normal_calls_keep_the_long_timeout(monkeypatch):
+    from dcc_mcp_zbrush.bridge import DEFAULT_TIMEOUT_SEC, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    seen = {}
+
+    def fake_send(_data, timeout=None):
+        seen["timeout"] = timeout
+        return _ping_reply()
+
+    monkeypatch.setattr(bridge, "_send", fake_send)
+    bridge.call("ping")
+
+    # Normal calls pass no timeout, so they fall back to the long default.
+    assert seen["timeout"] is None
+    assert bridge._timeout == DEFAULT_TIMEOUT_SEC
+
+
+def test_connect_raises_blocked_instead_of_half_connecting(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBlockedError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=TimeoutError("no reply")))
+
+    with pytest.raises(ZBrushBlockedError):
+        bridge.connect()
+
+    assert bridge.is_connected() is False
+
+
+def _busy_response(active_method="execute_python"):
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+            "code": -32001,
+            "message": f"ZBrush bridge is busy with {active_method}",
+            "data": {"retryable": True, "active_method": active_method},
+        },
+    }
+
+
+def test_call_retries_busy_until_the_host_frees_up(monkeypatch):
+    """A refused-but-servable call must be waited out, not surfaced as failure."""
+    from dcc_mcp_zbrush.bridge import SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876, busy_backoff_sec=0)
+    replies = [
+        _busy_response(),
+        _busy_response(),
+        {"jsonrpc": "2.0", "id": 1, "result": {"ok": True}},
+    ]
+    monkeypatch.setattr(bridge, "_send", lambda _data, timeout=None: json.dumps(replies.pop(0)).encode("utf-8"))
+
+    assert bridge.call("get_scene_info") == {"ok": True}
+    assert replies == []
+
+
+def test_call_gives_up_after_the_configured_retries(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876, busy_retries=2, busy_backoff_sec=0)
+    attempts = []
+    monkeypatch.setattr(
+        bridge,
+        "_send",
+        lambda _data, timeout=None: (attempts.append(1), json.dumps(_busy_response()).encode("utf-8"))[1],
+    )
+
+    with pytest.raises(ZBrushBridgeError) as caught:
+        bridge.call("get_scene_info")
+
+    assert caught.value.code == -32001
+    # 1 initial attempt + 2 retries.
+    assert len(attempts) == 3
+
+
+def test_call_does_not_retry_blocked_or_non_retryable_errors(monkeypatch):
+    """Only a servable busy host is waited out; everything else fails fast."""
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushBridgeError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876, busy_retries=3, busy_backoff_sec=0)
+    attempts = []
+    responses = [
+        # -32001 but explicitly not retryable.
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32001, "message": "busy", "data": {"retryable": False}},
+        },
+        # A blocked host: inside a native call, must never be retried.
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32003, "message": "blocked", "data": {"retryable": True}},
+        },
+    ]
+    for response in responses:
+        attempts.clear()
+        monkeypatch.setattr(
+            bridge,
+            "_send",
+            lambda _data, timeout=None, r=response: (attempts.append(1), json.dumps(r).encode("utf-8"))[1],
+        )
+
+        with pytest.raises(ZBrushBridgeError):
+            bridge.call("get_scene_info")
+
+        assert len(attempts) == 1
+
+
+def test_busy_retry_backoff_grows_and_is_capped(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge
+
+    bridge = SocketBridge(
+        host="127.0.0.1",
+        port=9876,
+        busy_retries=4,
+        busy_backoff_sec=0.1,
+        busy_backoff_max_sec=0.3,
+    )
+    import dcc_mcp_zbrush.bridge as bridge_module
+
+    delays = []
+    monkeypatch.setattr(bridge_module.time, "sleep", delays.append)
+    monkeypatch.setattr(bridge, "_send", lambda _data, timeout=None: json.dumps(_busy_response()).encode("utf-8"))
+
+    with pytest.raises(Exception):
+        bridge.call("get_scene_info")
+
+    # Assert the actual delay values, not just the attempt count: 0.1 and 0.2
+    # grow exponentially, then the 0.3 cap holds for the rest. A test that only
+    # counts retries stays green if the cap or the growth is deleted.
+    assert delays == [0.1, 0.2, 0.3, 0.3]
+
+
+def test_blocked_error_maps_to_zbrush_blocked_at_tool_boundary():
+    from dcc_mcp_zbrush import api
+    from dcc_mcp_zbrush.bridge import ZBrushBlockedError
+
+    @api.with_zbrush
+    def call_blocked(**_kwargs):
+        # A real verdict carries its own "message" key, which must not collide
+        # with zb_error's message argument.
+        raise ZBrushBlockedError(
+            "stuck",
+            detail={"status": "blocked", "message": "verdict text", "endpoint": "127.0.0.1:9876"},
+        )
+
+    result = call_blocked()
+
+    assert result["error"] == "ZBRUSH_BLOCKED"
+    # The verdict is nested wholesale, not splatted into the tool context.
+    assert result["context"]["blocked"]["status"] == "blocked"
+    assert result["context"]["blocked"]["message"] == "verdict text"
+    # Hard constraint: never auto-answer and never blindly retry.
+    assert "Do not retry automatically" in result["prompt"]
+
+
+def test_probe_reports_unreachable_when_nothing_listens(monkeypatch):
+    """A missing plugin must not be diagnosed as a blocked main thread."""
+    from dcc_mcp_zbrush.bridge import STATUS_UNREACHABLE, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionRefusedError("refused")))
+
+    verdict = bridge.probe()
+
+    assert verdict["status"] == STATUS_UNREACHABLE
+    assert "listening" in verdict["message"]
+    # The blocked wording must not appear: it would misdirect troubleshooting.
+    assert "native call" not in verdict["message"]
+
+
+def test_connect_reports_unreachable_not_blocked(monkeypatch):
+    from dcc_mcp_zbrush.bridge import SocketBridge, ZBrushNotAvailableError
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    monkeypatch.setattr(bridge, "_send", MagicMock(side_effect=ConnectionRefusedError("refused")))
+
+    with pytest.raises(ZBrushNotAvailableError):
+        bridge.connect()
+
+    assert bridge.is_connected() is False
+
+
+def test_probe_does_not_mutate_the_shared_timeout(monkeypatch):
+    """Probes run concurrently with tool calls; the timeout must not leak."""
+    from dcc_mcp_zbrush.bridge import DEFAULT_TIMEOUT_SEC, PING_TIMEOUT_SEC, SocketBridge
+
+    bridge = SocketBridge(host="127.0.0.1", port=9876)
+    seen = {}
+
+    def fake_send(_data, timeout=None):
+        seen["timeout"] = timeout
+        return _ping_reply()
+
+    monkeypatch.setattr(bridge, "_send", fake_send)
+    bridge.probe()
+
+    assert seen["timeout"] == PING_TIMEOUT_SEC
+    assert bridge._timeout == DEFAULT_TIMEOUT_SEC
+
+
+def test_install_readiness_probe_leaves_core_default_intact():
+    """Regression: installing a probe used to pin /v1/readyz to a permanent 503.
+
+    Core 0.20.42 does not let an adapter drive the ``dcc`` bit, so the adapter
+    must not publish a probe at all. Verified against a live server: with a
+    probe published, every bit except process/skill_catalog went false and
+    readyz returned 503 even with a healthy host.
+    """
+    from dcc_mcp_zbrush.server import ZBrushMcpServer
+
+    server = object.__new__(ZBrushMcpServer)
+    server._bridge = MagicMock()
+
+    assert server._install_readiness_probe() is None
+    assert not hasattr(server, "_readiness_binder")
+
+
+def test_readyz_reports_healthy_sidecar():
+    """End-to-end: a sidecar with no ZBrush must still report ready, as on main."""
+    import time
+    import urllib.error
+    import urllib.request
+
+    from dcc_mcp_zbrush import ZBrushMcpServer
+
+    server = ZBrushMcpServer(port=0, mode="sidecar", socket_port=19959, gateway_port=0)
+    server.register_builtin_actions()
+    server.start(install_atexit_hook=False)
+    try:
+        time.sleep(1.0)
+        url = server.mcp_url.replace("/mcp", "/v1/readyz")
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                status = response.status
+                body = response.read().decode()
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            body = exc.read().decode()
+        assert status == 200, body
+    finally:
+        server.stop()
 
 
 def test_sidecar_retains_bridge_when_initial_connect_fails():

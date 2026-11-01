@@ -20,7 +20,12 @@ _SKILL_DIRS = (
     "zbrush-viewport",
     "zbrush-interchange",
     "zbrush-import-to-scene",
+    "zbrush-dialog",
 )
+# Sidecar-only skills never call zbrush.commands and must run while a note
+# blocks the ZBrush main thread; routing them there would queue them behind
+# the very note they answer.
+_SIDECAR_ONLY_SKILLS = frozenset({"zbrush-dialog"})
 
 
 def _load_script(skill_name: str, script_name: str) -> ModuleType:
@@ -47,9 +52,11 @@ def test_tools_yaml_contract(skill_dir: str) -> None:
     data = yaml.safe_load(tools_path.read_text(encoding="utf-8"))
     for tool in data["tools"]:
         assert tool.get("execution") in ("sync", "async")
-        # Skill handlers run in the sidecar; the socket bridge marshals SDK
-        # work onto ZBrush's main thread inside the host process.
-        assert tool.get("affinity") == "any"
+        # ZBrush Python APIs are host-bound, so every tool must declare main.
+        # The field describes where the work has to run, not where the handler
+        # lives: the sidecar process marshals the call into the host.
+        expected = "any" if skill_dir in _SIDECAR_ONLY_SKILLS else "main"
+        assert tool.get("affinity") == expected
         assert (tools_path.parent / tool["source_file"]).is_file()
         assert "inputSchema" not in tool
         assert tool["input_schema"]["type"] == "object"

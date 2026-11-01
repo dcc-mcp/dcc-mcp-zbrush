@@ -19,14 +19,19 @@ native operation. Do not close a note or click confirmation buttons automaticall
 
 ## Safeguards in this change
 
-- Every sidecar host call first makes an SDK-free ping with a 2-second budget
-  (configurable as `SocketBridge(probe_timeout=...)`, capped by its call timeout).
-  An unresponsive or unavailable bridge prevents that host call from being sent.
-- A responsive bridge reporting `busy` also prevents a new host call. A later
-  call probes again; there is no permanent fault latch or forced task termination.
-- Host requests carry a top-level `deadline_unix_ms`. The plugin checks it on
-  admission, including after a delayed TCP accept, and converts the remaining
-  budget to a local monotonic deadline capped at its 600-second wait budget.
+- `SocketBridge.probe()` pings with a short timeout (default 3 s) and classifies
+  the host as `ready`, `busy`, `blocked`, or `unreachable`. `connect()` refuses a
+  `blocked` host with `ZBrushBlockedError` before any tool call is sent, so a
+  stalled main thread surfaces as an explicit verdict instead of a silent hang.
+  A failure is never taken as proof of a dialog.
+- `call()` waits out a `busy` host: a `-32001` reply marked retryable is retried
+  with capped exponential backoff. A `blocked` verdict is reported, not retried
+  blind.
+- Host requests carry a top-level `deadline_unix_ms` derived from the client's
+  call timeout. The plugin validates it on admission, including after a delayed
+  TCP accept, and converts the remaining budget to a local monotonic deadline
+  capped at its 600-second wait budget. Older clients or plugins that omit or
+  ignore the field still get the plugin's local queue timeout.
 - The main-thread pump checks the deadline before starting host work. A queued
   request that expires is cancelled and never executed; cancelled queue entries
   do not accumulate across retries.
@@ -35,13 +40,11 @@ native operation. Do not close a note or click confirmation buttons automaticall
   it finishes. Losing its response means the outcome is unknown: inspect the
   scene before repeating a mutation.
 
-Error categories are `ZBRUSH_BUSY` (-32001), the existing
+The adapter surfaces `ZBRUSH_BUSY` (-32001), the existing
 `ZBRUSH_TIMEOUT_STILL_RUNNING` (-32002; also used with
-`execution_state: "unknown"` when the response is lost),
-`ZBRUSH_UNRESPONSIVE` (-32003, with transport state), and
-`ZBRUSH_REQUEST_EXPIRED` (-32004, `executed: false`). A preflight rejection
-includes `submitted: false`. A timeout is never evidence that an already-started
-operation did not modify the scene.
+`execution_state: "unknown"` when the response is lost), and
+`ZBRUSH_REQUEST_EXPIRED` (-32004, `executed: false`). A timeout is never
+evidence that an already-started operation did not modify the scene.
 
 ## Important limitations
 
@@ -54,8 +57,8 @@ operation did not modify the scene.
   needs independent external health/recovery polling and main-thread evidence;
   a listener-only ping must not set every execution bit to ready. Existing Core
   readiness APIs can be evaluated without assuming a new cross-Core contract.
-- Preflight is a point-in-time observation. A native operation or dialog can
-  begin immediately after it succeeds; the deadline check is a separate guard.
+- A probe verdict is a point-in-time observation. A native operation or dialog
+  can begin immediately after it succeeds; the deadline check is a separate guard.
 - Update both the sidecar package and installed plugin for wire-deadline
   protection. An older plugin ignores this extra field. Older clients without
   the field still receive the plugin's local queue-timeout protection, but the
@@ -68,17 +71,17 @@ operation did not modify the scene.
 
 ## Validation
 
-Linux tests exercise queue state transitions and real loopback TCP peers that
-accept a connection without responding, or accept already-expired requests.
+Linux tests exercise queue state transitions, the client's wire-deadline
+emission, and a real loopback TCP peer that accepts an already-expired request.
 They verify transport and queue behavior only. Mocked handlers are not native
 ZBrush acceptance evidence.
 
 Before considering the native issue resolved, test on the reported macOS/ZBrush
 versions with the pentagon OBJ and an additional long-running non-modal operation:
 
-1. Confirm short ping reports unresponsive while the native call holds the GIL,
+1. Confirm a short probe reports blocked while the native call holds the GIL,
    without claiming to identify a dialog or stopping the active operation.
-2. Confirm a new host call is not sent after a failed preflight.
+2. Confirm a blocked verdict prevents subsequent host calls from being sent.
 3. Hold the main-thread pump beyond the bridge deadline, then resume it and
    verify that the expired queued mutation never starts.
 4. Confirm an already-started operation is never retried automatically after

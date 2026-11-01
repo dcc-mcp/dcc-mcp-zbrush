@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.2.32](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.31...v0.2.32) (2026-10-30)
+
+
+### Bug Fixes
+
+* **identity:** separate ZBrush SDK edition from host version in verify ([#104](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/104)) ([2f07e84](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/2f07e84eba501ef280f5ed7a33254a0c89c029c0)), closes [#103](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/103)
+
+
+### Documentation
+
+* refresh the generated DCC-MCP host matrix pointer ([cf12e9c](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/cf12e9ce1fbaa3e224da63b65f703244a1bb5a84))
+
+## [0.2.31](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.30...v0.2.31) (2026-10-24)
+
+
+### Features
+
+* add read-only GoZ snapshot candidate ([220c395](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/220c395de71a6648d0d1a86e7bb8ed1371b29e0c))
+
+## [0.2.30](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.29...v0.2.30) (2026-10-18)
+
+
+### Features
+
+* add zbrush-dialog tools to detect, read, and answer blocking notes ([c4866be](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/c4866be6721855f678aa1aeb09e0574a25a9518a))
+
+## [0.2.29](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.28...v0.2.29) (2026-10-12)
+
+
+### Bug Fixes
+
+* **bridge:** retry calls that ZBrush refuses as busy ([#95](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/95)) ([7cf7a84](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/7cf7a847e23916e8a0b9230faceef9d44be9d0f8))
+
+## [0.2.28](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.27...v0.2.28) (2026-10-12)
+
+
+### Bug Fixes
+
+* **import:** reject OBJ faces ZBrush cannot triangulate ([38d8b1b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/38d8b1b2d4734f221313d56b510b881d6f1db78c))
+* **skills:** declare thread affinity main for all ZBrush tools ([1b64334](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/1b643340f2a314dc154d6499c5ae7ae7726118f0))
+
+
+### Documentation
+
+* **readme:** add the generated DCC-MCP host matrix pointer ([#85](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/85)) ([757137b](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/757137bb22d6297ca530cc6c879a414086c086e0))
+* refresh the generated DCC-MCP host matrix pointer ([#88](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/88)) ([9b2712c](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/9b2712cd990553fa5a1f98e94f1c5d08abc1e83b))
+
 ## [0.2.27](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.26...v0.2.27) (2026-09-29)
 
 

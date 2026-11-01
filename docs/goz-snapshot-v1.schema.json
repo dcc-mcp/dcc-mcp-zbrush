@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dcc-mcp/dcc-mcp-zbrush/blob/main/docs/goz-snapshot-v1.schema.json",
+  "title": "Read-only GoZ snapshot candidate v1",
+  "$defs": {
+    "text_digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "utf8_valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sha256",
+        "byte_length",
+        "utf8_valid"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "format": {
+      "const": "goz"
+    },
+    "validation_scope": {
+      "const": "stored_values_only"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "header_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "sha256",
+        "byte_length",
+        "header_sha256"
+      ]
+    },
+    "identity": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "session": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.+-]{1,64}$"
+            },
+            "build": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.+-]{1,64}$"
+            },
+            "tool": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.+-]{1,64}$"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "host_id": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "session",
+            "build",
+            "tool",
+            "index",
+            "host_id"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "$ref": "#/$defs/text_digest"
+    },
+    "flags": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "positions": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 3,
+        "maxItems": 3
+      }
+    },
+    "faces": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "minItems": 4,
+        "maxItems": 4
+      }
+    },
+    "uv4": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 8,
+            "maxItems": 8
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mask": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "bits": {
+                  "const": 8
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              },
+              "required": [
+                "bits",
+                "values"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "bits": {
+                  "const": 16
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                  }
+                }
+              },
+              "required": [
+                "bits",
+                "values"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "polypaint_mrgb_u32": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "polygroups_u16": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "maps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "color",
+              "normal",
+              "displacement"
+            ]
+          },
+          "reference": {
+            "$ref": "#/$defs/text_digest"
+          },
+          "modifier": {
+            "type": "number"
+          },
+          "availability": {
+            "enum": [
+              "not_checked",
+              "unresolved_reference",
+              "inventory_present",
+              "inventory_missing"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "reference",
+          "modifier",
+          "availability"
+        ]
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tag": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "modifier_hex": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "decoded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tag",
+          "offset",
+          "size",
+          "count",
+          "modifier_hex",
+          "sha256",
+          "decoded"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "format",
+    "validation_scope",
+    "source",
+    "identity",
+    "name",
+    "flags",
+    "positions",
+    "faces",
+    "uv4",
+    "mask",
+    "polypaint_mrgb_u32",
+    "polygroups_u16",
+    "maps",
+    "blocks"
+  ]
+}

@@ -15,6 +15,7 @@ STAGES: Tuple[str, ...] = (
     "presentation",
     "interchange",
     "pipeline",
+    "recovery",
 )
 
 STAGE_SKILLS: dict[str, Tuple[str, ...]] = {
@@ -24,6 +25,7 @@ STAGE_SKILLS: dict[str, Tuple[str, ...]] = {
     "presentation": ("zbrush-viewport",),
     "interchange": ("zbrush-interchange",),
     "pipeline": ("zbrush-import-to-scene",),
+    "recovery": ("zbrush-dialog",),
 }
 
 

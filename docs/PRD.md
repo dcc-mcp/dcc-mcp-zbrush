@@ -204,7 +204,7 @@ Provided by Maxon SDK `zbrush-2026.1.0+`. Not available in any earlier ZBrush ve
 
 | Function | Description |
 |----------|-------------|
-| `zbrush_info(index)` | ZBrush version `(major, minor)` |
+| `zbrush_info(index)` | `index=0`: ZBrush version number (float, e.g. `2026.0`); `index=1`: edition type (0=Demo, 1=Beta, 2=Full). Index 1 is **not** a version component. |
 | `get_subtool_count()` | Number of SubTools |
 | `get_subtool_status(index)` | Bitmask: bit 0=visible, bit 1=locked |
 | `get_active_subtool_index()` | Current SubTool index |
@@ -416,4 +416,4 @@ Follows the same `release-please` workflow as `dcc-mcp-core` and `dcc-mcp-maya`.
 
 1. **FBX export**: Does `zbrush.commands` expose FBX export, or is a separate script needed? → Currently only OBJ export via `Tool:Export` button press.
 2. **Concurrent access**: ZBrush's Python VM is single-threaded for scene operations. The bridge admits one SDK request at a time, rejects parallel work as busy, keeps timed-out requests reserved until host completion, and answers `ping` off the SDK thread.
-3. **ZBrush version probing**: `zbrush_info()` returns `(major, minor)`. Need to validate the exact version string format in 2026.1+ SDK releases.
+3. **ZBrush version probing**: per the Maxon SDK, `zbrush_info(0)` is the version number and `zbrush_info(1)` is the edition type (not a minor version). Host identity binds the signed executable's full-precision ProductVersion and compares the SDK value at its major (year) precision.

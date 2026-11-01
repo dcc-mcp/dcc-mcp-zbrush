@@ -709,6 +709,7 @@ class TestDocsDrift:
         "zbrush-brush",
         "zbrush-viewport",
         "zbrush-interchange",
+        "zbrush-dialog",
     }
 
     _INSTALL_COMMANDS = ["pip install dcc-mcp-zbrush"]

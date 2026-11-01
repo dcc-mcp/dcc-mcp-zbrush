@@ -91,6 +91,10 @@ bundled_skills:
   - name: zbrush-import-to-scene
     tools:
       - import_to_scene
+  - name: zbrush-dialog
+    tools:
+      - get_active_dialog
+      - click_dialog_button
 
 key_files:
   - path: src/dcc_mcp_zbrush/server.py
@@ -190,6 +194,9 @@ failure_modes:
   - problem: subprocess fails
     cause: "ZBrush Python VM does not support subprocess"
     fix: Use execute_python skill instead
+  - problem: Calls return ZBRUSH_BLOCKED or time out while ZBrush looks frozen
+    cause: "A modal note (popup) blocks the ZBrush main thread"
+    fix: "load_skill zbrush-dialog, call get_active_dialog, then click_dialog_button; never resend the timed-out call"
   - problem: ZBrush version < 2026.1
     cause: No Python SDK available
     fix: Upgrade to ZBrush 2026.1+

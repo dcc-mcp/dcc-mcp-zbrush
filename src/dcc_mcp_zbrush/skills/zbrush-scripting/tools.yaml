@@ -7,7 +7,7 @@ tools:
       optional `result` variable from the namespace.
     source_file: scripts/execute_python.py
     execution: sync
-    affinity: any
+    affinity: main
     group: core
     annotations:
       destructive_hint: true
@@ -35,7 +35,7 @@ tools:
       the scene. Safe health check for MCP wiring.
     source_file: scripts/get_session_info.py
     execution: sync
-    affinity: any
+    affinity: main
     group: diagnostics
     annotations:
       read_only_hint: true

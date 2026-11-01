@@ -157,6 +157,34 @@ class ZBrushMcpServer(DccServerBase):
                 "Install bridge/plugin/mcp_socket_bridge.py in ZBrush and restart.",
                 exc,
             )
+        self._install_readiness_probe()
+
+    def _install_readiness_probe(self) -> None:
+        """No-op: wiring the readiness probe here would gate MCP calls on it.
+
+        Core 0.20.42 *can* drive the ``dcc`` bit — measured on a live server,
+        publishing a probe before ``start()`` and setting the bits statically
+        yields 200, and ``refresh_dcc_ready()`` flips ``/v1/readyz`` between 200
+        and 503 in real time. It is not a core capability gap. Two things make it
+        a bad fit here regardless:
+
+        * The probe is shared with ``/mcp`` and ``/v1/call``, so ``dcc_ready_probe``
+          becomes a gate on MCP calls, not just on a health endpoint. A probe
+          callback that raises fails closed: core's ``_resolve_dcc_ready``
+          converts the exception into ``False``, and the whole instance goes 503.
+        * The wiring is timing-sensitive — a probe published after ``start()``
+          never swaps in at all, so the effect differs by call site.
+
+        An earlier revision of this method asserted that core cannot drive the
+        bit. That was an overgeneralisation from measurements taken only after
+        ``start()``; it is false and is retained here as a warning against
+        re-deriving the conclusion from a single timing.
+
+        Readiness reporting is therefore left at core's default, and the blocked
+        signal is surfaced through ``SocketBridge.probe`` and the
+        ``ZBRUSH_BLOCKED`` tool error instead.
+        """
+        return
 
     def register_builtin_actions(
         self,

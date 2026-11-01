@@ -10,6 +10,7 @@ Progressive loading stages for `dcc-mcp-zbrush`. Minimal mode loads **bootstrap 
 | `presentation` | `zbrush-viewport` | no |
 | `interchange` | `zbrush-interchange` | no |
 | `pipeline` | `zbrush-import-to-scene` | no |
+| `recovery` | `zbrush-dialog` | no |
 
 ## Common chains
 
@@ -24,6 +25,7 @@ Progressive loading stages for `dcc-mcp-zbrush`. Minimal mode loads **bootstrap 
 | Capture turntable | `load_skill("zbrush-viewport")` → `zbrush_viewport__capture_turntable` |
 | Export to OBJ | `zbrush_subtool__select_subtool` → `load_skill("zbrush-interchange")` → `zbrush_interchange__export_active_subtool_obj` |
 | Import OBJ asset | `load_skill("zbrush-import-to-scene")` → `zbrush_import_to_scene__import_to_scene` → `zbrush_scene__list_subtools` |
+| Answer a blocking popup | `load_skill("zbrush-dialog")` → `zbrush_dialog__get_active_dialog` → `zbrush_dialog__click_dialog_button` |
 | Escape hatch | `load_skill("zbrush-scripting")` → `zbrush_scripting__execute_python` (last resort) |
 
 ## Skill inventory
@@ -37,3 +39,4 @@ Progressive loading stages for `dcc-mcp-zbrush`. Minimal mode loads **bootstrap 
 | `zbrush-viewport` | `capture_turntable` | domain |
 | `zbrush-interchange` | `export_active_subtool_obj` | domain |
 | `zbrush-import-to-scene` | `import_to_scene` | domain |
+| `zbrush-dialog` | `get_active_dialog`, `click_dialog_button` | domain |
