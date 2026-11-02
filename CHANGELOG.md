@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.33](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.32...v0.2.33) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bridge:** classify post-submit connection loss as unknown, not retryable ([#109](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/109)) ([ece89e7](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/ece89e7bb8a06bcd17643c89998c7c3d3a02ade2))
+* **dialog:** close confirmation, owner and floating-window bypasses ([9414c20](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/9414c20c27b428ecc1f90dde3ab57d7d00817721))
+* guard blocked bridge calls and expire queued requests (partial [#89](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/89)) ([39765ca](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/39765ca051a95bb1536058dc4b171be1fd4832ba))
+* **identity:** parse the SDK float version separately from signed ProductVersion ([138eaa9](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/138eaa9de6b028e5135d15856a2e03723eac8940))
+
 ## [0.2.32](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.31...v0.2.32) (2026-10-30)
 
 
