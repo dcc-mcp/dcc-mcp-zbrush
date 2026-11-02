@@ -49,7 +49,10 @@ def get_bridge():
     if not _bridge.is_connected():
         try:
             _bridge.connect()
-        except ZBrushBridgeError:
+        except (ZBrushBridgeError, ZBrushBlockedError):
+            # A blocked verdict must reach the ZBRUSH_BLOCKED branch: swallowing
+            # it into "not available" would drop the "do not retry automatically"
+            # warning for a host with an open dialog / stalled main thread.
             raise
         except Exception as exc:  # noqa: BLE001
             raise ZBrushNotAvailableError(f"ZBrush sidecar bridge reconnect failed: {exc}") from exc
@@ -130,10 +133,13 @@ def with_zbrush(func: _F) -> _F:
                 blocked=exc.detail,
             )
         except ZBrushBridgeError as exc:
+            # -32003 ("unresponsive") has no live producer: an unresponsive
+            # host is classified by probe() as ZBrushBlockedError and surfaces
+            # as ZBRUSH_BLOCKED below. Keep the code-to-label map aligned with
+            # the codes the client/plugin actually emit.
             error_code = {
                 -32001: "ZBRUSH_BUSY",
                 -32002: "ZBRUSH_TIMEOUT_STILL_RUNNING",
-                -32003: "ZBRUSH_UNRESPONSIVE",
                 -32004: "ZBRUSH_REQUEST_EXPIRED",
             }.get(exc.code, "ZBRUSH_BRIDGE_ERROR")
             return zb_error(

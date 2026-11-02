@@ -43,8 +43,21 @@ native operation. Do not close a note or click confirmation buttons automaticall
 The adapter surfaces `ZBRUSH_BUSY` (-32001), the existing
 `ZBRUSH_TIMEOUT_STILL_RUNNING` (-32002; also used with
 `execution_state: "unknown"` when the response is lost), and
-`ZBRUSH_REQUEST_EXPIRED` (-32004, `executed: false`). A timeout is never
-evidence that an already-started operation did not modify the scene.
+`ZBRUSH_REQUEST_EXPIRED` (-32004, `executed: false`). The client classifies a
+lost, empty, or malformed reply to a submitted method as `-32002` with
+`execution_state: "unknown"` and `retryable: false`, so a possibly
+side-effecting call is never replayed blindly. The same classification applies
+to a connection-level failure (reset, abort, broken pipe, or EOF) that occurs
+*after* the request is on the wire: `SocketBridge._send` records whether the
+TCP connection was established before the error, so only a failure before any
+byte is sent is reported as unreachable, while a post-send failure is
+`-32002 execution_state=unknown, retryable=false` and is never surfaced as a
+bare transport error that invites an automatic retry. `probe()` likewise
+treats a reset after the connection was accepted as `blocked`, not
+`unreachable`. An unresponsive host is classified by `probe()` and reported as
+`ZBRUSH_BLOCKED` (via `ZBrushBlockedError`), not by the retired
+`ZBRUSH_UNRESPONSIVE` (-32003) mapping, which has no live producer. A timeout
+is never evidence that an already-started operation did not modify the scene.
 
 ## Important limitations
 
@@ -72,9 +85,13 @@ evidence that an already-started operation did not modify the scene.
 ## Validation
 
 Linux tests exercise queue state transitions, the client's wire-deadline
-emission, and a real loopback TCP peer that accepts an already-expired request.
-They verify transport and queue behavior only. Mocked handlers are not native
-ZBrush acceptance evidence.
+emission (including a numeric check that a short client timeout, not the 600 s
+plugin cap, is the binding budget), a real loopback TCP peer that accepts an
+already-expired request, and a real TCP EOF after submit. They verify transport
+and queue behavior only. Client and tool-boundary unit tests cover the
+blocked-host reconnect verdict and the lost-reply `-32002 unknown /
+retryable=false` classification. Mocked handlers are not native ZBrush
+acceptance evidence.
 
 Before considering the native issue resolved, test on the reported macOS/ZBrush
 versions with the pentagon OBJ and an additional long-running non-modal operation:
