@@ -7,14 +7,25 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from dcc_mcp_zbrush import start_server, stop_server
 from dcc_mcp_zbrush.__version__ import __version__
 
+logger = logging.getLogger(__name__)
+
 LIFECYCLE_OPERATIONS = {"install", "status", "verify", "uninstall", "upgrade"}
+
+# The host queue is drained from the sidecar process main thread. A bounded
+# timeout keeps the loop responsive to Ctrl+C; a fairness cap stops one busy
+# burst from starving the listener.
+_HOST_TICK_MAX_JOBS = 16
+_HOST_TICK_TIMEOUT_MS = 100
+_MAX_CONSECUTIVE_TICK_FAILURES = 5
+_PUMP_GUARD = threading.Lock()
 
 
 def _asset_dir_from_environment() -> Optional[Path]:
@@ -85,6 +96,56 @@ def _lifecycle_main(argv: list[str]) -> int:
     return int(result["exit_code"])
 
 
+def pump_host_dispatcher(
+    dispatcher: Any,
+    *,
+    max_jobs: int = _HOST_TICK_MAX_JOBS,
+    timeout_ms: int = _HOST_TICK_TIMEOUT_MS,
+) -> None:
+    """Drain the host queue on the calling (sidecar main) thread until shutdown.
+
+    Core's ``attach_dispatcher`` posts every HTTP ``tools/call`` into this
+    queue; ``tick_blocking`` executes those jobs on the calling thread. Skill
+    script execution stays inline, so no job ever posts another job (the
+    reentrancy failure mode of a queue-backed in-process executor).
+
+    A single failed tick is logged and retried; repeated consecutive failures
+    end the loop so the process reports a real error instead of spinning. The
+    module-level guard prevents two pumps from draining one queue at once.
+    """
+    if not _PUMP_GUARD.acquire(blocking=False):
+        raise RuntimeError("A ZBrush host dispatcher pump is already running")
+    failures = 0
+    try:
+        while not dispatcher.is_shutdown():
+            try:
+                dispatcher.tick_blocking(max_jobs, timeout_ms)
+            except KeyboardInterrupt:
+                raise
+            except Exception:  # noqa: BLE001
+                failures += 1
+                logger.exception(
+                    "ZBrush host dispatcher tick failed (%d/%d consecutive)",
+                    failures,
+                    _MAX_CONSECUTIVE_TICK_FAILURES,
+                )
+                if failures >= _MAX_CONSECUTIVE_TICK_FAILURES:
+                    raise RuntimeError("ZBrush host dispatcher tick failed repeatedly; stopping the sidecar")
+                time.sleep(min(0.5, 0.05 * failures))
+            else:
+                failures = 0
+    finally:
+        _PUMP_GUARD.release()
+
+
+def _shutdown_host_dispatcher(dispatcher: Any) -> None:
+    """Reject new posts and cancel pending jobs; safe to call more than once."""
+    try:
+        dispatcher.shutdown()
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to shut down the ZBrush host dispatcher")
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
     if arguments and arguments[0] in LIFECYCLE_OPERATIONS:
@@ -126,14 +187,33 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"ZBrush MCP server started ({server.mode}): {server.mcp_url}")
     print("Press Ctrl+C to stop...")
 
+    dispatcher = server.host_dispatcher
+    if dispatcher is None:
+        # Embedded mode has no HTTP host queue to drain; keep the process alive.
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+        finally:
+            stop_server()
+        return 0
+
+    exit_code = 0
     try:
-        while True:
-            time.sleep(1)
+        pump_host_dispatcher(dispatcher)
     except KeyboardInterrupt:
         print("\nShutting down...")
+    except Exception as exc:  # noqa: BLE001
+        print(f"\nHost dispatcher stopped unexpectedly: {exc}", file=sys.stderr)
+        exit_code = 1
+    finally:
+        # Cancel queued jobs first so in-flight HTTP handlers fail fast, then
+        # stop the listener. ``stop_server`` also shuts down the dispatcher.
+        _shutdown_host_dispatcher(dispatcher)
         stop_server()
 
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
