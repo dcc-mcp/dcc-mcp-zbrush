@@ -1,0 +1,2 @@
+# Keep committed bytes byte-for-byte stable so sha256 in manifest.json stays valid.
+* -text

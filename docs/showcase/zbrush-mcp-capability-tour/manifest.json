@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "reference": "dcc-mcp/dcc-mcp-zbrush 0.2.32 bundled skill tools.yaml contracts",
+  "python_application": "CPython",
+  "python_version": "3.12.10",
+  "adapter_package": "dcc-mcp-zbrush",
+  "adapter_version": "0.2.32",
+  "core_package": "dcc-mcp-core",
+  "core_version": "0.20.52",
+  "capture_provider": "none",
+  "capture_note": "No capture was taken in this run. hero-zbrush-dragon.jpg is retained historical ZBrush 2026.2.0 evidence, re-encoded from its original WebP payload to genuine JPEG q82 with no cropping or content retouching.",
+  "zbrush_host_executed_this_run": false,
+  "publication_decision": "unlisted_pending_real_host_evidence",
+  "files": [
+    {
+      "path": "hero-zbrush-dragon.jpg",
+      "sha256": "bbd0f5fe4c6c043521fddfc56e62ead3fb2da7d6a6b64c830294dd3c5ef84658",
+      "bytes": 124511,
+      "width": 1280,
+      "height": 720,
+      "bit_depth": 8,
+      "encoding": "JPEG q82 (re-encoded from a retained WebP payload; no cropping or content retouching)",
+      "caption": "Retained historical ZBrush 2026.2.0 Dragon evidence from the dcc-mcp-zbrush README. The original WebP payload was re-encoded to a genuine JPEG at quality 82 with no cropping or content retouching. No new capture was produced in this run."
+    },
+    {
+      "path": "README.zh.md",
+      "sha256": "2a8a64c47bb8fb49a5df0ecb098b3eeaa203225714066744e8cd499d82175936",
+      "bytes": 9800,
+      "caption": "Simplified-Chinese localization of the report (bilingual EN + ZH requirement)."
+    },
+    {
+      "path": "capability_matrix.json",
+      "sha256": "0b679eb0afff9c0e35bc6d77bad38a15009ac6ce8cc14670352d2ce0e8f68982",
+      "bytes": 10452,
+      "caption": "Machine-readable inventory of all 17 typed tools: stage, skill, layer, affinity, required fields, annotations, demo step and copyable prompt."
+    },
+    {
+      "path": "capability_tour_result.json",
+      "sha256": "4bcbbe76939135bd2ededeab24961f4259effeeb8b2b1e6564a33252e17dcf87",
+      "bytes": 9423,
+      "caption": "Generated output of reproduce_capability_tour.py: measured counts, per-contract SHA-256 digests, checks[] and verdict."
+    },
+    {
+      "path": "reproduce_capability_tour.py",
+      "sha256": "afd70c1bf62ecc270fa1b6d46ac86fb087fa248bbb1c6085c533c5851aaed803",
+      "bytes": 10260,
+      "caption": "Standalone reproduction script (Python 3.10+ / PyYAML). Validates static contracts only; never launches ZBrush."
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "slug": "zbrush-mcp-capability-tour",
+  "verification_level": "contract_verified_clean_wheel",
+  "status_note": "Contract-complete capability tour. Live ZBrush 2027 host tool returns are NOT_RUN and are explicitly not claimed. Historical real-host identity evidence is retained and kept separate from this run.",
+  "environment": {
+    "python_application": "CPython",
+    "python_version": "3.12.10",
+    "min_python": "3.10",
+    "adapter_package": "dcc-mcp-zbrush",
+    "adapter_version": "0.2.32",
+    "core_package": "dcc-mcp-core",
+    "core_version": "0.20.52",
+    "pytest_version": "9.0.2",
+    "build_tool": "python -m build 1.6.1 (hatchling 1.33.0)",
+    "artifact": "dcc_mcp_zbrush-0.2.32-py3-none-any.whl built from this checkout, installed into a clean venv",
+    "zbrush_host_executed_this_run": false,
+    "zbrush_mcp_instances_this_run": 0,
+    "gateway_other_instances_this_run": 1,
+    "sidecar_ports_open_this_run": 0,
+    "retained_historical_hosts": [
+      "ZBrush 2026.2.0 (Full), Maxon-signed, native identity/verify gate PASS (PR #104)",
+      "ZBrush 2027.0.1, Maxon-signed, real SDK zbrush_info(0)=2027.0009765625 / (1)=2.0, identity fix PASS without rollback"
+    ],
+    "scope": "Static contract verification, clean-wheel test suite, and a reproducible capability tour. No GUI launch, no scene mutation, no host deployment."
+  },
+  "counts": {
+    "skills": 8,
+    "typed_tools": 17,
+    "runtime_modes": 2,
+    "progressive_stages": 7,
+    "default_loaded_stages": 2,
+    "read_only_tools": 6,
+    "destructive_tools": 11,
+    "lifecycle_exit_codes": 6,
+    "pytest_passed": 596,
+    "pytest_skipped": 2,
+    "pytest_failed": 0,
+    "capability_tour_checks_pass": 3,
+    "capability_tour_checks_not_run": 1,
+    "demo_steps": 12,
+    "historical_2026_2_0_native_regression_pass": 13,
+    "selection_sets_bake_current_uv_apply_cancel_registered_tools": 0
+  },
+  "lifecycle_exit_codes": {
+    "EXIT_OK": 0,
+    "EXIT_PREFLIGHT": 10,
+    "EXIT_ACQUIRE": 20,
+    "EXIT_INSTALL": 30,
+    "EXIT_VERIFY": 40,
+    "EXIT_REQUIRES_RESTART": 50
+  },
+  "checks": [
+    {
+      "name": "wheel_build_from_checkout",
+      "result": "pass",
+      "observed": "python -m build --wheel produced dcc_mcp_zbrush-0.2.32-py3-none-any.whl from this checkout; build exit 0."
+    },
+    {
+      "name": "clean_venv_pytest",
+      "result": "pass",
+      "observed": "Wheel installed into a fresh venv with dcc-mcp-core 0.20.52; full suite: 596 passed, 2 skipped, 0 failed (exit 0). Import binding verified against the venv site-packages, not the stale editable 0.2.29 install."
+    },
+    {
+      "name": "skills_lint",
+      "result": "pass",
+      "observed": "tools/lint_skills.py completed with exit 0 on the bundled skill packages."
+    },
+    {
+      "name": "capability_tour_contracts",
+      "result": "pass",
+      "observed": "reproduce_capability_tour.py: 8 skills / 17 tools; every declared source_file exists, every input_schema.type is object, and all next-tools references resolve. 3 of its 4 checks pass; the fourth is an explicit not_run honesty marker."
+    },
+    {
+      "name": "capability_matrix_consistency",
+      "result": "pass",
+      "observed": "capability_matrix.json rows match the shipped tools.yaml contracts field-for-field (skill, affinity, group, required, annotations); matrix covers exactly 17 qualified tool names."
+    },
+    {
+      "name": "historical_2026_2_0_native_identity",
+      "result": "pass",
+      "observed": "Retained evidence (PR #104): real Maxon-signed ZBrush 2026.2.0 host, live zbrush_info values, native verify gate 13/13 pass. Historical acceptance, not re-run here."
+    },
+    {
+      "name": "historical_2027_0_1_host_identity",
+      "result": "pass",
+      "observed": "Retained evidence: real ZBrush 2027.0.1 host returned zbrush_info(0)=2027.0009765625 and (1)=2.0; the fixed read_sdk_version yields ('2027.001', 2) and _host_version_is_consistent is True, so no EXIT_VERIFY/40 rollback. Historical acceptance, not re-run here."
+    },
+    {
+      "name": "live_zbrush_2027_typed_tool_returns",
+      "result": "not_run",
+      "observed": "No ZBrush process, no zbrush MCP instance in the gateway, and no open sidecar ports were present; the 2027 host has no adapter/plugin deployment receipt. Real tools/call returns for the 17 typed tools were therefore not produced. Requires an owner-authorized host deployment receipt, a GUI/document lease, and a normal zbrush instance under /instances before this check can run."
+    },
+    {
+      "name": "selection_sets_bake_current_uv_apply_cancel",
+      "result": "not_run",
+      "observed": "These three UI capabilities have no dedicated entry among the real zbrush.commands callable surface and 0 registered typed tools; only bake_active_subtool_map carries related bake/UV-map semantics. GUI visibility is not SDK support, so no call was attempted or claimed."
+    },
+    {
+      "name": "real_host_turntable_media",
+      "result": "not_run",
+      "observed": "No live ZBrush viewport was launched; no new turntable PSD/GIF/MP4 was captured. The hero image is retained historical evidence, not a capture from this run."
+    },
+    {
+      "name": "bilingual_site_pages_build",
+      "result": "not_run",
+      "observed": "The showcase site build, English/Chinese detail pages, locales and cover checks run in the dcc-mcp/showcase repository, which is a separate repository; not executed from this adapter checkout."
+    },
+    {
+      "name": "gallery_publication_and_deploy_readback",
+      "result": "not_run",
+      "observed": "No collection.json / unlisted-cases.json decision, no PR, no merge, no Pages deployment, and no live-page read-back were performed. Publication authority is separate from creation authority."
+    }
+  ],
+  "not_claimed": [
+    "That any of the 17 typed tools returned a real value from a live ZBrush 2027 GUI host during this run.",
+    "That the ZBrush 2027 host has the adapter/plugin deployed, or that a zbrush instance is registered with the gateway.",
+    "That Selection Sets, Bake Current, or UV Apply/Cancel are callable capabilities of this adapter.",
+    "That any turntable, render, screenshot, or video was newly captured for this entry; the hero image is retained historical evidence from dcc-mcp-zbrush README.",
+    "That this entry is published on the showcase gallery, merged, deployed, or visible on any live page.",
+    "That a formal approval, independent exact-head review, CI gate, or release authorization was completed for this entry.",
+    "That historical 2026.2.0 / 2027.0.1 real-host acceptance was re-executed here; it is retained and kept separate.",
+    "Any private task ID, raw prompt, account, credential, internal path, or unredacted log."
+  ],
+  "model_attribution": [
+    {"stage_id": "planning", "stage": "Planning", "model": "Unknown", "reasoning_effort": "Unknown", "record_status": "unknown", "basis": "No accepted task configuration record for the original planning stage was available to this run.", "scope": "Capability tour scoping"},
+    {"stage_id": "creation", "stage": "Creation", "model": "Unknown", "reasoning_effort": "Unknown", "record_status": "unknown", "basis": "Historical production model configuration is not part of the public record; not inferred from the current run.", "scope": "Retained ZBrush Dragon hero evidence"},
+    {"stage_id": "code", "stage": "Code", "model": "Unknown", "reasoning_effort": "Unknown", "record_status": "unknown", "basis": "The adapter source predates this run; per-stage model configuration was not recorded.", "scope": "dcc-mcp-zbrush 0.2.32 source and skill contracts"},
+    {"stage_id": "reference", "stage": "Reference generation", "model": "Unknown", "reasoning_effort": "Unknown", "record_status": "unknown", "basis": "No reference-generation model call is part of this contract-only tour.", "scope": "Capability matrix and prompts"},
+    {"stage_id": "post_production", "stage": "Post-production", "model": "Unknown", "reasoning_effort": "Unknown", "record_status": "unknown", "basis": "No post-production or media retouching was performed in this run.", "scope": "Retained media only"},
+    {"stage_id": "review", "stage": "Independent review", "model": "Unknown", "reasoning_effort": "Unknown", "record_status": "unknown", "basis": "No independent review run is recorded for this draft; review remains a separate gate.", "scope": "Draft case, not accepted"}
+  ],
+  "revision_notes": [
+    {
+      "date": "2026-11-03",
+      "version": "0.2.32 (draft case)",
+      "change": "Initial contract-complete capability tour. Live ZBrush 2027 host tool calls, gallery publication, and independent review remain explicitly NOT_RUN."
+    }
+  ],
+  "publication_decision": {
+    "status": "unlisted_pending_real_host_evidence",
+    "reason": "The entry is structurally complete and contract-verified, but the showcase standard requires real MCP tool-return evidence and a production-reuse/acceptance record before a gallery card. Real 2027 host tool calls are not_run, so the case must be registered as unlisted (or held as a draft) until that evidence exists and an authorized Draft PR, review, merge and deploy read-back are completed in dcc-mcp/showcase."
+  }
+}

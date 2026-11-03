@@ -1,0 +1,317 @@
+{
+  "schema_version": 1,
+  "slug": "zbrush-mcp-capability-tour",
+  "generated_at": "2026-11-03T00:47:48+00:00",
+  "skills_root_kind": "explicit_argument",
+  "contract_sha256": {
+    "zbrush-brush": "61cb2e31d2755a24a3b2fdaca0885229ac62fae147ab1116f2240d9c58d8dca2",
+    "zbrush-dialog": "ecafd605e5f1851dc6a815933a9f51d17d6b21f0cd05ad7bca821bb7928592b2",
+    "zbrush-import-to-scene": "e7490ac3a8614f1d9d17da0dfc3249f5eb57192618bec6df9bfe7a4b820d396a",
+    "zbrush-interchange": "a44d5819c66135c4a1e127a6065143e1dd209f2076bf8c53cf77a48d316b8f7e",
+    "zbrush-scene": "a1e003c4d76456366277485585a8202d0f654b9dd7968e4a5faf84a79802ef29",
+    "zbrush-scripting": "74b5ed9b6d75e9bfe5f0aefb18037a34e2b9c9865a9ffb7fdcf8bd40f484c0c5",
+    "zbrush-subtool": "50da5664967417097fbf75dda711d63c759696b9c036a0e863b4d3ecd04c727b",
+    "zbrush-viewport": "168df5a032193fd893aaee1858acbafdb57fe7b69f293f3c02512a37178ffe4d"
+  },
+  "python": "3.12.10",
+  "counts": {
+    "skills": 8,
+    "typed_tools": 17,
+    "per_skill": {
+      "zbrush-brush": 2,
+      "zbrush-dialog": 2,
+      "zbrush-import-to-scene": 1,
+      "zbrush-interchange": 1,
+      "zbrush-scene": 2,
+      "zbrush-scripting": 2,
+      "zbrush-subtool": 6,
+      "zbrush-viewport": 1
+    },
+    "read_only_tools": 6,
+    "destructive_tools": 11
+  },
+  "tools": [
+    {
+      "qualified_name": "zbrush_brush__create_wrinkle_brush",
+      "skill": "zbrush-brush",
+      "name": "create_wrinkle_brush",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "output_path"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": true
+      },
+      "source_file": "scripts/wrinkle_brush.py"
+    },
+    {
+      "qualified_name": "zbrush_brush__load_wrinkle_brush",
+      "skill": "zbrush-brush",
+      "name": "load_wrinkle_brush",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "brush_path"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": true
+      },
+      "source_file": "scripts/wrinkle_brush.py"
+    },
+    {
+      "qualified_name": "zbrush_dialog__get_active_dialog",
+      "skill": "zbrush-dialog",
+      "name": "get_active_dialog",
+      "affinity": "any",
+      "group": "core",
+      "required": [],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true
+      },
+      "source_file": "scripts/get_active_dialog.py"
+    },
+    {
+      "qualified_name": "zbrush_dialog__click_dialog_button",
+      "skill": "zbrush-dialog",
+      "name": "click_dialog_button",
+      "affinity": "any",
+      "group": "core",
+      "required": [
+        "button_name"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false
+      },
+      "source_file": "scripts/click_dialog_button.py"
+    },
+    {
+      "qualified_name": "zbrush_import_to_scene__import_to_scene",
+      "skill": "zbrush-import-to-scene",
+      "name": "import_to_scene",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "asset_id",
+        "variants"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false
+      },
+      "source_file": "scripts/import_to_scene.py"
+    },
+    {
+      "qualified_name": "zbrush_interchange__export_active_subtool_obj",
+      "skill": "zbrush-interchange",
+      "name": "export_active_subtool_obj",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "output_path"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": true
+      },
+      "source_file": "scripts/export_active_subtool_obj.py"
+    },
+    {
+      "qualified_name": "zbrush_scene__get_scene_info",
+      "skill": "zbrush-scene",
+      "name": "get_scene_info",
+      "affinity": "main",
+      "group": "core",
+      "required": [],
+      "annotations": {
+        "read_only": true,
+        "destructive": null,
+        "idempotent": true
+      },
+      "source_file": "scripts/get_scene_info.py"
+    },
+    {
+      "qualified_name": "zbrush_scene__list_subtools",
+      "skill": "zbrush-scene",
+      "name": "list_subtools",
+      "affinity": "main",
+      "group": "core",
+      "required": [],
+      "annotations": {
+        "read_only": true,
+        "destructive": null,
+        "idempotent": true
+      },
+      "source_file": "scripts/list_subtools.py"
+    },
+    {
+      "qualified_name": "zbrush_scripting__execute_python",
+      "skill": "zbrush-scripting",
+      "name": "execute_python",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "code"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false
+      },
+      "source_file": "scripts/execute_python.py"
+    },
+    {
+      "qualified_name": "zbrush_scripting__get_session_info",
+      "skill": "zbrush-scripting",
+      "name": "get_session_info",
+      "affinity": "main",
+      "group": "diagnostics",
+      "required": [],
+      "annotations": {
+        "read_only": true,
+        "destructive": null,
+        "idempotent": true
+      },
+      "source_file": "scripts/get_session_info.py"
+    },
+    {
+      "qualified_name": "zbrush_subtool__select_subtool",
+      "skill": "zbrush-subtool",
+      "name": "select_subtool",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "index"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": true
+      },
+      "source_file": "scripts/select_subtool.py"
+    },
+    {
+      "qualified_name": "zbrush_subtool__get_subtool_status",
+      "skill": "zbrush-subtool",
+      "name": "get_subtool_status",
+      "affinity": "main",
+      "group": "diagnostics",
+      "required": [],
+      "annotations": {
+        "read_only": true,
+        "destructive": null,
+        "idempotent": true
+      },
+      "source_file": "scripts/get_subtool_status.py"
+    },
+    {
+      "qualified_name": "zbrush_subtool__inspect_active_mesh",
+      "skill": "zbrush-subtool",
+      "name": "inspect_active_mesh",
+      "affinity": "main",
+      "group": "diagnostics",
+      "required": [],
+      "annotations": {
+        "read_only": true,
+        "destructive": null,
+        "idempotent": true
+      },
+      "source_file": "scripts/inspect_active_mesh.py"
+    },
+    {
+      "qualified_name": "zbrush_subtool__remesh_active_subtool",
+      "skill": "zbrush-subtool",
+      "name": "remesh_active_subtool",
+      "affinity": "main",
+      "group": "core",
+      "required": [],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false
+      },
+      "source_file": "scripts/remesh_active_subtool.py"
+    },
+    {
+      "qualified_name": "zbrush_subtool__refine_active_subtool",
+      "skill": "zbrush-subtool",
+      "name": "refine_active_subtool",
+      "affinity": "main",
+      "group": "core",
+      "required": [],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false
+      },
+      "source_file": "scripts/refine_active_subtool.py"
+    },
+    {
+      "qualified_name": "zbrush_subtool__bake_active_subtool_map",
+      "skill": "zbrush-subtool",
+      "name": "bake_active_subtool_map",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "map_type",
+        "output_path"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": true
+      },
+      "source_file": "scripts/bake_active_subtool_map.py"
+    },
+    {
+      "qualified_name": "zbrush_viewport__capture_turntable",
+      "skill": "zbrush-viewport",
+      "name": "capture_turntable",
+      "affinity": "main",
+      "group": "core",
+      "required": [
+        "output_dir"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": true
+      },
+      "source_file": "scripts/capture_turntable.py"
+    }
+  ],
+  "checks": [
+    {
+      "name": "contract_structure_and_source_files",
+      "result": "pass",
+      "observed": "17 tools across 8 skills checked; all source files present, all schemas are objects"
+    },
+    {
+      "name": "next_tools_references_resolve",
+      "result": "pass",
+      "observed": "all next-tools references resolve to declared tools"
+    },
+    {
+      "name": "capability_matrix_matches_contracts",
+      "result": "pass",
+      "observed": "matrix rows match the shipped tools.yaml contracts field-for-field"
+    },
+    {
+      "name": "live_zbrush_host_tool_calls",
+      "result": "not_run",
+      "observed": "This reproduction validates static contracts only. No ZBrush process, MCP instance, or zbrush.commands call was executed by this script; real tool returns require a running host with the adapter deployed."
+    }
+  ],
+  "verdict": "pass",
+  "matrix_sha256": "0b679eb0afff9c0e35bc6d77bad38a15009ac6ce8cc14670352d2ce0e8f68982"
+}
