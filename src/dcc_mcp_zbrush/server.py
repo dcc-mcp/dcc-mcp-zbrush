@@ -103,6 +103,9 @@ class ZBrushMcpServer(DccServerBase):
         self._socket_host = options.socket_host
         self._socket_port = options.socket_port
         self._bridge = None
+        # Rust-backed queue attached to core's MCP HTTP server in sidecar mode.
+        # The CLI main loop drains it; see ``dcc_mcp_zbrush.cli.main``.
+        self._host_dispatcher = None
 
         if options.gateway_port == 0 or (
             options.gateway_port is None and not _env.resolve_enable_gateway_failover(options.enable_gateway_failover)
@@ -128,6 +131,11 @@ class ZBrushMcpServer(DccServerBase):
     @property
     def mcp_url(self) -> str:
         return f"http://127.0.0.1:{self.port}/mcp"
+
+    @property
+    def host_dispatcher(self) -> Any | None:
+        """Host queue to drain from the sidecar main loop (``None`` in embedded mode)."""
+        return self._host_dispatcher
 
     def _collect_skill_paths(self) -> List[str]:
         return self.collect_skill_search_paths(
@@ -197,7 +205,7 @@ class ZBrushMcpServer(DccServerBase):
         if minimal_mode is None and _env.resolve_minimal_mode_enabled():
             minimal_mode = build_minimal_mode_config()
 
-        _executor.attach_inprocess_executor(self)
+        self._host_dispatcher = _executor.attach_inprocess_executor(self)
 
         super().register_builtin_actions(
             extra_skill_paths=extra_skill_paths,
@@ -216,6 +224,16 @@ class ZBrushMcpServer(DccServerBase):
         return self
 
     def stop(self) -> None:
+        # Cancel pending HTTP jobs before the listener goes away so in-flight
+        # tools/call handlers fail fast instead of waiting on a pump that has
+        # already stopped. ``shutdown()`` is idempotent in core dispatchers.
+        host_dispatcher = self._host_dispatcher
+        if host_dispatcher is not None:
+            try:
+                host_dispatcher.shutdown()
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to shut down the ZBrush host dispatcher")
+            self._host_dispatcher = None
         if self._bridge is not None:
             self._bridge.disconnect()
             self._bridge = None

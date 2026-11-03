@@ -690,6 +690,35 @@ def _zbrush_module_provenance(receipt: Mapping[str, Any], origin_text: str) -> t
     return origin, digest
 
 
+_ZBRUSH_ORIGIN_SOURCES = frozenset({"module_file", "host_executable"})
+
+
+def _validate_zbrush_commands_origin_source(
+    receipt: Mapping[str, Any],
+    session: Mapping[str, Any],
+    origin: Path,
+) -> None:
+    """Bind an embedded ``zbrush.commands`` report to the selected host binary.
+
+    When the module has no ``__file__`` (ZBrush 2026.2+), the bridge may only
+    report the running host executable as its origin. A cwd-derived path is not
+    a trusted source and must fail verification closed. Bridges from older
+    releases do not send ``zbrush_commands_origin_source``; for those the
+    mandatory ``_zbrush_module_provenance`` check is still applied.
+    """
+    source = session.get("zbrush_commands_origin_source")
+    if source is None:
+        return
+    if source not in _ZBRUSH_ORIGIN_SOURCES:
+        raise LifecycleFailure(EXIT_VERIFY, "host_identity", "zbrush.commands origin source is not trusted")
+    if source == "host_executable" and not _same_path(origin, str(receipt.get("dcc_path") or "")):
+        raise LifecycleFailure(
+            EXIT_VERIFY,
+            "host_identity",
+            "Embedded zbrush.commands origin is not the selected host executable",
+        )
+
+
 def _validate_sidecar_session(
     request: LifecycleRequest,
     asset_dir: Path,
@@ -737,6 +766,7 @@ def _validate_sidecar_session(
     ):
         raise LifecycleFailure(EXIT_VERIFY, "host_identity", "Loaded bridge module bytes are not receipt-owned")
     zbrush_origin, zbrush_digest = _zbrush_module_provenance(receipt, str(session.get("zbrush_commands_origin") or ""))
+    _validate_zbrush_commands_origin_source(receipt, session, zbrush_origin)
 
     try:
         process_path = _process_executable(pid)
@@ -862,6 +892,7 @@ def _validate_embedded_readiness(
         raise LifecycleFailure(EXIT_VERIFY, "host_identity", "Embedded adapter module bytes are not receipt-owned")
 
     zbrush_origin, zbrush_digest = _zbrush_module_provenance(receipt, str(session.get("zbrush_commands_origin") or ""))
+    _validate_zbrush_commands_origin_source(receipt, session, zbrush_origin)
     try:
         process_path = _process_executable(pid)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -2390,6 +2421,33 @@ def _bootstrap_failures(asset_dir: Path, receipt: Mapping[str, Any]) -> list[dic
     return failures
 
 
+def _rollback_recovery_steps(
+    request: LifecycleRequest, detected: Optional[Mapping[str, Any]] = None
+) -> list[dict[str, Any]]:
+    """Explain what a disk rollback does and does not restore.
+
+    Restoring candidate files does not unload a bridge already resident in the
+    running ZBrush Python VM. Verification must not present the rollback as a
+    recovery of the loaded bridge; the host has to be restarted first.
+    """
+    start_path = str((detected or {}).get("dcc_path") or request.dcc_path or "")
+    return [
+        _next_step(
+            "restart-zbrush-after-rollback",
+            "Restart ZBrush before installing or verifying again.",
+            "The loaded bridge lives in the host Python VM; restoring files on disk neither "
+            "reloads it nor unloads it. A fresh host process is required.",
+            command=[start_path] if start_path else _lifecycle_command(request, "status"),
+        ),
+        _next_step(
+            "reinstall-after-rollback",
+            "Re-run the install for the exact selected product, then verify.",
+            "Verification commits the new transaction only after exact readiness succeeds.",
+            command=_lifecycle_command(request, "install", yes=True),
+        ),
+    ]
+
+
 def _verification_failure(
     request: LifecycleRequest,
     asset_dir: Path,
@@ -2428,7 +2486,12 @@ def _verification_failure(
                 ],
             )
     receipt_path = asset_dir / RECEIPT_RELATIVE
-    suffix = "; the candidate was rolled back to the exact prior state" if rolled_back else ""
+    suffix = (
+        "; the candidate files were restored to the exact prior state on disk, "
+        "which does not unload the bridge already loaded in the running ZBrush VM"
+        if rolled_back
+        else ""
+    )
     return _result(
         request,
         status=status,
@@ -2437,7 +2500,11 @@ def _verification_failure(
         reason=reason + suffix,
         receipt=receipt_path if receipt_path.is_file() else None,
         detected={**detected, **dict(extra_detected or {})},
-        next_steps=[] if rolled_back else list(next_steps or _verification_steps(request, detected)),
+        next_steps=(
+            _rollback_recovery_steps(request, detected)
+            if rolled_back
+            else list(next_steps or _verification_steps(request, detected))
+        ),
     )
 
 

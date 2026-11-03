@@ -349,6 +349,25 @@ def _subtool_name(path: str) -> str:
     return ntpath.basename(path)
 
 
+def _zbrush_commands_origin(zbc: Any) -> tuple[str, str]:
+    """Resolve the ``zbrush.commands`` origin without depending on the cwd.
+
+    ZBrush 2026.2+ builds ``zbrush.commands`` into the signed host executable,
+    so the module has no ``__file__``. ``os.path.abspath("")`` would resolve to
+    the current working directory and make ``verify`` reject a correct install.
+    Report the running host executable instead: verification binds that path to
+    the selected product, the OS process image, and its SHA-256 digest. An
+    empty origin fails verification closed rather than guessing a path.
+    """
+    module_file = str(getattr(zbc, "__file__", "") or "").strip()
+    if module_file:
+        return os.path.abspath(module_file), "module_file"
+    executable = str(getattr(sys, "executable", "") or "").strip()
+    if executable and os.path.isfile(executable):
+        return os.path.abspath(executable), "host_executable"
+    return "", "unresolved"
+
+
 def _get_session_info() -> Dict[str, Any]:
     zbc = _import_zbc()
     identity_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dcc_mcp_zbrush_install_identity.json")
@@ -368,6 +387,7 @@ def _get_session_info() -> Dict[str, Any]:
     # (zbrush_info(0)) and the edition type (zbrush_info(1)) are reported
     # separately; the edition is never a version component.
     product_version = str(install_identity.get("zbrush_version") or "")
+    zbrush_origin, zbrush_origin_source = _zbrush_commands_origin(zbc)
     return {
         "adapter_version": install_identity.get("adapter_version"),
         "bridge_instance_id": _BRIDGE_INSTANCE_ID,
@@ -381,7 +401,8 @@ def _get_session_info() -> Dict[str, Any]:
         "zbrush_version": sdk_version,
         "zbrush_edition": sdk_edition,
         "zbrush_product_version": product_version,
-        "zbrush_commands_origin": os.path.abspath(getattr(zbc, "__file__", "")),
+        "zbrush_commands_origin": zbrush_origin,
+        "zbrush_commands_origin_source": zbrush_origin_source,
         "active_tool_path": str(zbc.get_active_tool_path() or ""),
         "subtool_count": int(zbc.get_subtool_count()),
         "embedded_python": True,

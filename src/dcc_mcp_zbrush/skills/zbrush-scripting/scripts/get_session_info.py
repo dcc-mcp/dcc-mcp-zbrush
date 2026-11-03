@@ -33,10 +33,27 @@ def _install_identity() -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _zbrush_commands_origin(zbc) -> tuple[str, str]:
+    """Resolve the module origin without falling back to the cwd.
+
+    ZBrush 2026.2+ embeds ``zbrush.commands`` in the signed host executable, so
+    the module has no ``__file__``. Report the running host executable instead;
+    verification binds it to the selected product, the OS process image and its
+    SHA-256 digest. ``""`` fails verification closed.
+    """
+    module_file = str(getattr(zbc, "__file__", "") or "").strip()
+    if module_file:
+        return str(Path(module_file).resolve()), "module_file"
+    executable = str(getattr(sys, "executable", "") or "").strip()
+    if executable and os.path.isfile(executable):
+        return str(Path(executable).resolve()), "host_executable"
+    return "", "unresolved"
+
+
 def _collect(zbc) -> dict:
     identity = _install_identity()
     adapter_path = Path(dcc_mcp_zbrush.__file__).resolve()
-    zbrush_origin = str(getattr(zbc, "__file__", "") or "")
+    zbrush_origin, zbrush_origin_source = _zbrush_commands_origin(zbc)
     try:
         server = dcc_mcp_zbrush.get_server()
     except Exception:
@@ -53,7 +70,8 @@ def _collect(zbc) -> dict:
         "zbrush_version": sdk_version,
         "zbrush_edition": sdk_edition,
         "zbrush_product_version": product_version,
-        "zbrush_commands_origin": str(Path(zbrush_origin).resolve()) if zbrush_origin else "",
+        "zbrush_commands_origin": zbrush_origin,
+        "zbrush_commands_origin_source": zbrush_origin_source,
         "install_id": identity.get("install_id"),
         "selected_dcc_path": identity.get("dcc_path"),
         "selected_dcc_sha256": identity.get("dcc_sha256"),
