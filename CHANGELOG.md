@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.34](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.33...v0.2.34) (2026-11-03)
+
+
+### Bug Fixes
+
+* **sidecar:** attach host dispatcher and report trusted zbrush.commands origin ([#112](https://github.com/dcc-mcp/dcc-mcp-zbrush/issues/112)) ([bc869d1](https://github.com/dcc-mcp/dcc-mcp-zbrush/commit/bc869d1c369e4e3749d8543110d44c3cc1f27b83))
+
 ## [0.2.33](https://github.com/dcc-mcp/dcc-mcp-zbrush/compare/v0.2.32...v0.2.33) (2026-11-02)
 
 
