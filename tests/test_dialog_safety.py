@@ -16,6 +16,18 @@ from unittest.mock import patch
 from dcc_mcp_zbrush import _dialogs
 
 _NODE = shutil.which("node")
+
+# A cold `node -e` boot on a fresh Windows runner can exceed the strict policy
+# timeout below (V8 init, DLL paging, Defender real-time scan), while later
+# spawns reuse warm caches and finish in well under a second. Boot the real
+# harness once with a generous ceiling OUTSIDE any test's assertion window so
+# every policy evaluation runs on a warm runtime and keeps the fail-closed
+# bound. Splitting process startup from policy execution keeps the owner filter
+# assertions intact and never skips/xfails a safety test.
+_NODE_BOOT_TIMEOUT = 60
+_JXA_TIMEOUT = 10
+_WARMUP_SOURCE = "function run(argv) { return JSON.stringify({ok: true}); }"
+_runtime_warmed = False
 _HARNESS = r"""
 const vm = require('node:vm');
 const input = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
@@ -68,14 +80,41 @@ def _window(window_id: int = 7, pid: int = 4321, owner: str = "ZBrush", layer: i
     }
 
 
+def _warm_runtime() -> None:
+    """Absorb the one-time Node/JXA mock cold start before any timed assertion.
+
+    The first ``node -e`` process on Windows can spend >10s in V8 startup,
+    DLL paging and Defender scanning; subsequent spawns reuse warm caches and
+    finish in well under a second. Warming here uses a generous ceiling that
+    is not part of any test's policy timeout, so a hung JXA policy still fails
+    closed under ``_JXA_TIMEOUT`` and no owner filter assertion is relaxed.
+    """
+    global _runtime_warmed
+    if _runtime_warmed or _NODE is None:
+        return
+    warm = subprocess.run(
+        [_NODE, "-e", _HARNESS],
+        input=json.dumps({"source": _WARMUP_SOURCE, "windows": [], "argv": []}),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=_NODE_BOOT_TIMEOUT,
+    )
+    envelope = json.loads(warm.stdout)
+    if not envelope.get("result", {}).get("ok"):
+        raise RuntimeError("JXA mock harness warmup did not return a usable envelope")
+    _runtime_warmed = True
+
+
 def _jxa(source: str, windows: list, *argv) -> dict:
+    _warm_runtime()
     result = subprocess.run(
         [_NODE, "-e", _HARNESS],
         input=json.dumps({"source": source, "windows": windows, "argv": list(map(str, argv))}),
         capture_output=True,
         text=True,
         check=True,
-        timeout=10,
+        timeout=_JXA_TIMEOUT,
     )
     return json.loads(result.stdout)
 
